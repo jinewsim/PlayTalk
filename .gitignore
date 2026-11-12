@@ -1,0 +1,25 @@
+# Build output
+target/
+build/
+out/
+bin/
+*.class
+*.jar
+!lib/*.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+.metadata/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Server runtime data (전적/채팅 기록 파일)
+data/
+*.log
