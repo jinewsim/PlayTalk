@@ -56,6 +56,7 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 | `GAME_INVITE` | S→C | inviteId, from, game, timeout | 받는 사람에게 |
 | `GAME_INVITE_REPLY` | C→S | inviteId, accept(true/false) | |
 | `GAME_INVITE_RESULT` | S→C | inviteId, from, target, game, result | result: `PENDING`(보낸 사람에게) / `ACCEPTED` / `DECLINED` / `TIMEOUT`(15초) / `CANCELLED` |
+| `GAME_INVITE_CANCEL` | C→S | inviteId | 초대를 보낸 사람만 취소 가능. 결과는 `GAME_INVITE_RESULT`의 `CANCELLED`로 양쪽에 전달 |
 
 ## 다인용 게임 대기실
 

@@ -55,6 +55,7 @@ public class GameManager implements GameContext {
     public void registerHandlers(MessageRouter router) {
         router.on(MessageType.GAME_INVITE, this::invite);
         router.on(MessageType.GAME_INVITE_REPLY, this::reply);
+        router.on(MessageType.GAME_INVITE_CANCEL, this::cancelInvite);
         router.on(MessageType.LOBBY_OPEN, this::openLobby);
         router.on(MessageType.LOBBY_JOIN, this::joinLobby);
         router.on(MessageType.LOBBY_LEAVE, this::leaveLobby);
@@ -120,6 +121,17 @@ public class GameManager implements GameContext {
         }
         sendInviteResult(inv, "ACCEPTED");
         startSession(inv.type(), List.of(inv.from(), inv.to()), inv.from().getRoom());
+    }
+
+    private synchronized void cancelInvite(ClientHandler user, Message msg) {
+        Invite inv = invites.get(msg.get("inviteId"));
+        if (inv == null || inv.from() != user) {
+            user.sendError("이미 처리된 신청입니다.");
+            return;
+        }
+        invites.remove(inv.id());
+        inv.timer().cancel();
+        sendInviteResult(inv, "CANCELLED");
     }
 
     private void expireInvite(String id) {

@@ -47,6 +47,7 @@ public class MainFrame extends JFrame {
         chat = new ChatPanel(nickname, this::sendChat, () -> games().openMultiGame(), this::leaveRoom);
         members = new MemberPanel(nickname, target -> games().challenge(target));
         games = new GameController(this, connection, nickname, chat);
+        games.setStatsOpener(this::openStats);
 
         JPanel root = new JPanel(new BorderLayout());
         root.add(buildTopBar(), BorderLayout.NORTH);

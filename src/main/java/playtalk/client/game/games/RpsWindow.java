@@ -4,6 +4,7 @@ import playtalk.client.game.GameSessionInfo;
 import playtalk.client.game.GameWindow;
 import playtalk.client.ui.Theme;
 import playtalk.client.ui.components.FlatButton;
+import playtalk.client.ui.components.HandIcon;
 import playtalk.common.Message;
 
 import javax.swing.JFrame;
@@ -20,7 +21,10 @@ import java.util.Map;
 /** 가위바위보: 제한 시간 안에 하나를 고른다. 결과는 서버가 판정해 알려준다. */
 public class RpsWindow extends GameWindow {
 
-    private static final String[][] CHOICES = {{"SCISSORS", "가위"}, {"ROCK", "바위"}, {"PAPER", "보"}};
+    private static final Object[][] CHOICES = {
+            {"SCISSORS", "가위", HandIcon.Kind.SCISSORS},
+            {"ROCK", "바위", HandIcon.Kind.ROCK},
+            {"PAPER", "보", HandIcon.Kind.PAPER}};        // ✋
     private static final Map<String, String> LABELS = Map.of(
             "SCISSORS", "가위", "ROCK", "바위", "PAPER", "보", "NONE", "선택 안 함");
 
@@ -35,10 +39,14 @@ public class RpsWindow extends GameWindow {
         JPanel row = new JPanel(new GridLayout(1, 3, 10, 0));
         row.setOpaque(false);
         for (int i = 0; i < 3; i++) {
-            String code = CHOICES[i][0];
-            FlatButton b = new FlatButton(CHOICES[i][1], FlatButton.Style.SECONDARY).radius(14);
-            b.setFont(Theme.bold(24));
-            b.setPreferredSize(new Dimension(110, 110));
+            String code = (String) CHOICES[i][0];
+            FlatButton b = new FlatButton((String) CHOICES[i][1], FlatButton.Style.SECONDARY).radius(14);
+            b.setIcon(new HandIcon((HandIcon.Kind) CHOICES[i][2], 64, Theme.PRIMARY_DARK, java.awt.Color.WHITE));
+            b.setVerticalTextPosition(SwingConstants.BOTTOM);
+            b.setHorizontalTextPosition(SwingConstants.CENTER);
+            b.setIconTextGap(8);
+            b.setFont(Theme.bold(16));
+            b.setPreferredSize(new Dimension(110, 120));
             b.addActionListener(e -> choose(code, b));
             buttons[i] = b;
             row.add(b);
