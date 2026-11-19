@@ -7,7 +7,7 @@
 
 | 개발 언어 | GUI | 통신 | 동시 처리 | 데이터 저장 |
 |---|---|---|---|---|
-| Java 17+ | Swing | TCP `Socket` / `ServerSocket` | 클라이언트별 스레드 + 동기화 | 서버 측 파일(CSV) |
+| Java 17+ | Swing | TCP `Socket` / `ServerSocket` | 클라이언트별 스레드 + 동기화 | 서버 측 파일(전적 CSV, 채팅 로그) |
 
 외부 라이브러리 없이 JDK만으로 동작합니다.
 
@@ -62,9 +62,17 @@ java -cp out/classes:out/test playtalk.ServerSmokeTest      # Windows는 ':' 대
   - 1:1 게임은 같은 상대에게 같은 게임으로 다시 초대 (초대 흐름 재사용)
   - 다인용 게임은 같은 게임의 대기실을 다시 엶
   - 새 게임이 시작되면 이전 결과 창은 자동으로 닫힘
-- [ ] 채팅 기록 저장 및 재입장 시 불러오기 선택
-- [ ] 다인용 게임 추가 (폭탄 돌리기, 끝말잇기)
-- [ ] 랭킹 / 게임 중 채팅 / 관전 / 방 비밀번호
+  - **전적 보기**는 그 채팅방에서 한 게임의 전적만 보여줌 (서버를 끄면 초기화)
+- [x] 채팅 기록 저장 및 재입장 시 불러오기 선택
+  - 대화를 서버 파일(`data/chat/`)에 저장하고, 방에 다시 들어올 때 이전 대화(최근 50개)를 불러올지 고름
+  - 방이 삭제되면(마지막 사람이 나감) 불러오기는 불가, 파일 기록만 남음
+- [x] 다인용 게임: **폭탄 돌리기 (2~5명)** — 폭발 시각은 서버만 알고, 터지기 3초 전에 경고 효과
+- [x] 랭킹: 전체 사용자 승률순 (3판 이상만 표시)
+
+- [ ] 회원가입 (회원 비밀번호 여부)
+- [ ] 게임 중 채팅
+- [ ] 관전
+- [ ] 방 비밀번호
 
 <details>
 <summary>화면 더 보기</summary>
@@ -98,21 +106,21 @@ src/main/java/playtalk/
 │   ├── ClientHandler        클라이언트 1명 = 스레드 1개 (수신 루프, 동기화된 송신)
 │   ├── MessageRouter        메시지 타입 → 처리 함수
 │   ├── UserManager          접속자, 닉네임 중복 검사
-│   ├── room/                ChatRoom, RoomManager (방 생성·입장·퇴장·채팅)
+│   ├── room/                ChatRoom, RoomManager (방 생성·입장·퇴장·채팅), ChatHistory (대화 저장·불러오기)
 │   ├── game/                GameManager (초대·대기실·세션), GameSession (게임 공통 틀)
-│   │   └── games/           TicTacToeGame, RockPaperScissorsGame, TimingGame
+│   │   └── games/           TicTacToeGame, RockPaperScissorsGame, TimingGame, BombGame
 │   └── stats/               StatsStore (전적 파일 저장)
 │
 └── client/
     ├── ClientMain           실행 진입점
     ├── net/ServerConnection 소켓 수신 스레드 → Swing 스레드로 메시지 전달
     ├── ui/                  LoginDialog, MainFrame(3단), RoomListPanel, ChatPanel, MemberPanel,
-    │                        CreateRoomDialog, StatsDialog, Theme(색·글꼴)
+    │                        CreateRoomDialog, StatsDialog, RankingDialog, Theme(색·글꼴)
     │   └── components/      FlatButton, RoundedPanel, Avatar, HandIcon(가위바위보 손), ScaledImageIcon
     └── game/                GameController (초대·대기실·게임 창 관리), GameWindow (게임 창 공통 틀, 재대결 버튼)
         │                    GameChoiceDialog (게임 선택 카드), InviteDialog (받은 초대),
         │                    WaitingDialog (보낸 초대 대기·취소), LobbyDialog (다인용 대기실)
-        └── games/           TicTacToeWindow, RpsWindow, TimingWindow
+        └── games/           TicTacToeWindow, RpsWindow, TimingWindow, BombWindow
 
 src/main/resources/
 ├── emoticons/               이모티콘 이미지
@@ -140,13 +148,14 @@ src/main/resources/
   - 게임 타이머(초대 만료, 가위바위보 제한 시간, 시간 맞추기)는 `ScheduledExecutorService` 하나에서 실행
 - **클라이언트**: 수신 스레드가 `SwingUtilities.invokeLater`로 리스너를 호출하므로 리스너 안에서 바로 화면을 고쳐도 안전합니다.
 
-## 새 게임 추가하기 (예: 폭탄 돌리기)
+## 새 게임 추가하기 (예: 폭탄 돌리기 -> 완료)
 
 게임은 인원 수와 상관없이 같은 틀(`GameSession` / `GameWindow`)을 씁니다. 파일 2개를 만들고 3군데에 한 줄씩 추가하면 됩니다.
 
+
 1. **`common/GameType`**에 상수 추가
    ```java
-   BOMB("폭탄 돌리기", 3, 5),   // 최대 인원이 2보다 크면 자동으로 대기실 방식
+   BOMB("폭탄 돌리기", 2, 5),   // 최대 인원이 2보다 크면 자동으로 대기실 방식
    ```
 2. **서버** `server/game/games/BombGame.java`: `GameSession` 상속
    ```java
