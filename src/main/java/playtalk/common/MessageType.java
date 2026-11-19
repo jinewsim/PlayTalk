@@ -52,6 +52,8 @@ public enum MessageType {
     GAME_INVITE_REPLY,
     /** S→C inviteId, target, game, result(ACCEPTED/DECLINED/TIMEOUT/CANCELLED) */
     GAME_INVITE_RESULT,
+    /** C→S inviteId: 내가 보낸 초대를 취소 (S→C GAME_INVITE_RESULT, result=CANCELLED) */
+    GAME_INVITE_CANCEL,
 
     // ---------------------------------------------------------- 다인용 게임 대기실
     /** C→S game: 현재 방에 대기실 열기 */

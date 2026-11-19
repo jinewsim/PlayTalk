@@ -18,6 +18,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.awt.FlowLayout;
 
 /**
  * 모든 게임 창의 공통 틀: 제목/참가자 헤더, 가운데 게임 화면, 아래 상태줄과 결과 배너.
@@ -34,6 +35,9 @@ public abstract class GameWindow extends JDialog {
     private final RoundedPanel resultBanner = new RoundedPanel(new BorderLayout(), Theme.SURFACE_LOW, 10);
     private final JLabel resultLabel = new JLabel("", SwingConstants.CENTER);
     private final FlatButton closeButton = new FlatButton("기권하고 나가기", FlatButton.Style.GHOST);
+    private final FlatButton rematchButton = new FlatButton("재대결", FlatButton.Style.PRIMARY);
+    private final FlatButton statsButton = new FlatButton("전적 보기", FlatButton.Style.GHOST);
+    private Runnable onShowStats = () -> { };
     private boolean ended;
 
     protected GameWindow(JFrame owner, GameSessionInfo session, int width, int height) {
@@ -70,15 +74,25 @@ public abstract class GameWindow extends JDialog {
         resultBanner.setBorder(Theme.padding(10, 12));
         resultBanner.add(resultLabel);
         resultBanner.setVisible(false);
+        rematchButton.setVisible(false);
+        rematchButton.addActionListener(e -> requestRematch());
+        statsButton.setVisible(false);
+        statsButton.addActionListener(e -> onShowStats.run());
         closeButton.addActionListener(e -> requestClose());
 
         JPanel footer = new JPanel(new BorderLayout(0, 8));
         footer.setOpaque(false);
         footer.add(statusLabel, BorderLayout.NORTH);
         footer.add(resultBanner, BorderLayout.CENTER);
+        JPanel statsHolder = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+        statsHolder.setOpaque(false);
+        statsHolder.add(statsButton);
+
         JPanel closeRow = new JPanel(new BorderLayout());
         closeRow.setOpaque(false);
         closeRow.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
+        closeRow.add(rematchButton, BorderLayout.WEST);
+        closeRow.add(statsHolder, BorderLayout.CENTER);
         closeRow.add(closeButton, BorderLayout.EAST);
         footer.add(closeRow, BorderLayout.SOUTH);
 
@@ -133,6 +147,8 @@ public abstract class GameWindow extends JDialog {
                 + escape(end.get("summary")) + "</span></center></html>");
         resultBanner.setVisible(true);
         setStatus(" ");
+        rematchButton.setVisible(true);
+        statsButton.setVisible(true);
         closeButton.setText("닫기");
         closeButton.setStyle(FlatButton.Style.PRIMARY);
         onGameEnded();
@@ -152,6 +168,22 @@ public abstract class GameWindow extends JDialog {
     public void showError(String text) {
         statusLabel.setForeground(Theme.ERROR);
         statusLabel.setText(text);
+    }
+    private void requestRematch() {
+        if (session.type().isOneOnOne()) {
+            for (String opponent : session.opponents()) {
+                session.send(Message.of(MessageType.GAME_INVITE)
+                        .put("target", opponent).put("game", session.type().name()));
+                setStatus(opponent + " 님에게 재대결을 신청했습니다...");
+            }
+        } else {
+            // 다인용: 같은 게임의 대기실을 다시 연다
+            session.send(Message.of(MessageType.LOBBY_OPEN).put("game", session.type().name()));
+            setStatus("[" + session.type().displayName() + "] 대기실 열기를 요청했습니다...");
+        }
+    }
+    public void setOnShowStats(Runnable onShowStats) {
+        this.onShowStats = onShowStats;
     }
 
     private void requestClose() {

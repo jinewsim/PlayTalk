@@ -5,12 +5,17 @@ import playtalk.client.ui.ChatPanel;
 import playtalk.common.GameType;
 import playtalk.common.Message;
 import playtalk.common.MessageType;
+import playtalk.common.Protocol;
 
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+
 
 /**
  * 클라이언트 쪽 게임 흐름 담당: 초대 주고받기, 대기실, 게임 창 열기/전달.
@@ -23,7 +28,11 @@ public class GameController {
     private final String me;
     private final ChatPanel chat;
     private final Map<String, GameWindow> windows = new HashMap<>();
+    /** 게임이 끝났지만 아직 화면에 열려 있는 창들 (재대결 시작 때 닫기 위해 보관) */
+    private final List<GameWindow> endedWindows = new ArrayList<>();
+    private Runnable statsOpener = () -> { };
     private final Map<String, InviteDialog> invites = new HashMap<>();
+    private final Map<String, WaitingDialog> waiting = new HashMap<>();
     private final LobbyDialog lobbyDialog;
     /** 지금 내 방에 열려 있는 대기실 id (없으면 null) */
     private String currentLobbyId;
@@ -49,8 +58,7 @@ public class GameController {
     /** 1:1 대결 신청 (게임 선택 후 초대 전송) */
     public void challenge(String target) {
         GameType[] options = Arrays.stream(GameType.values()).filter(GameType::isOneOnOne).toArray(GameType[]::new);
-        GameType type = (GameType) JOptionPane.showInputDialog(frame, target + " 님과 어떤 게임을 할까요?",
-                "1:1 대결 신청", JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+        GameType type = GameChoiceDialog.choose(frame, "1:1 대결 신청", target + " 님과 어떤 게임을 할까요?", options);
         if (type == null) return;
         connection.send(Message.of(MessageType.GAME_INVITE).put("target", target).put("game", type.name()));
     }
@@ -72,6 +80,10 @@ public class GameController {
     public void onRoomChanged() {
         currentLobbyId = null;
         lobbyDialog.setVisible(false);
+    }
+    /** 게임 창의 "전적 보기" 버튼이 호출할 동작 (메인 화면의 전적 창 열기) */
+    public void setStatsOpener(Runnable statsOpener) {
+        this.statsOpener = statsOpener;
     }
 
     /** ERROR를 게임 창에서 보여줬으면 true */
@@ -105,13 +117,22 @@ public class GameController {
     private void onInviteResult(Message msg) {
         InviteDialog dialog = invites.remove(msg.get("inviteId"));
         if (dialog != null) dialog.close();
+        WaitingDialog wait = waiting.remove(msg.get("inviteId"));
+        if (wait != null) wait.close();
 
         boolean iAmInviter = me.equals(msg.get("from")) || !msg.has("from");
         GameType type = GameType.parse(msg.get("game"));
         String game = type == null ? msg.get("game") : type.displayName();
         String target = msg.get("target");
         switch (msg.get("result")) {
-            case "PENDING" -> chat.appendSystem(target + " 님에게 [" + game + "] 대결을 신청했습니다. 응답을 기다리는 중...");
+            case "PENDING" -> {
+                chat.appendSystem(target + " 님에게 [" + game + "] 대결을 신청했습니다. 응답을 기다리는 중...");
+                String inviteId = msg.get("inviteId");
+                WaitingDialog w = new WaitingDialog(frame, target, game, Protocol.INVITE_TIMEOUT_SECONDS,
+                        () -> connection.send(Message.of(MessageType.GAME_INVITE_CANCEL).put("inviteId", inviteId)));
+                waiting.put(inviteId, w);
+                w.setVisible(true);
+            }
             case "DECLINED" -> chat.appendSystem(iAmInviter ? target + " 님이 대결을 거절했습니다." : "대결 신청을 거절했습니다.");
             case "TIMEOUT" -> chat.appendSystem(iAmInviter ? target + " 님이 제한 시간 안에 응답하지 않았습니다." : "응답 시간이 지나 초대가 취소되었습니다.");
             case "CANCELLED" -> chat.appendSystem("대결 신청이 취소되었습니다.");
@@ -146,7 +167,9 @@ public class GameController {
         GameType type = GameType.parse(msg.get("game"));
         if (type == null) return;
         GameSessionInfo info = new GameSessionInfo(msg.get("sessionId"), type, me, msg.getList("players"), connection);
+        closeEndedWindows(info);
         GameWindow window = GameWindowRegistry.create(frame, info);
+        window.setOnShowStats(statsOpener);
         windows.put(info.sessionId(), window);
         window.setVisible(true);
         window.onStart(msg);
@@ -159,6 +182,22 @@ public class GameController {
 
     private void onGameEnd(Message msg) {
         GameWindow w = windows.remove(msg.get("sessionId"));
-        if (w != null && w.isDisplayable()) w.onEnd(msg);
+        if (w != null && w.isDisplayable()) {
+            w.onEnd(msg);
+            endedWindows.add(w);
+        }
     }
+
+    /** 같은 게임의 새 게임이 시작되면 이전 결과 창을 닫는다 (1:1은 같은 참가자일 때만) */
+    private void closeEndedWindows(GameSessionInfo next) {
+        endedWindows.removeIf(w -> !w.isDisplayable());
+        endedWindows.removeIf(w -> {
+            boolean same = w.session.type() == next.type()
+                    && (!next.type().isOneOnOne()
+                    || new HashSet<>(w.session.players()).equals(new HashSet<>(next.players())));
+            if (same) w.dispose();
+            return same;
+        });
+    }
+
 }
