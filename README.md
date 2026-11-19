@@ -49,14 +49,19 @@ java -cp out/classes:out/test playtalk.ServerSmokeTest      # Windows는 ':' 대
 - [x] 방장: 방을 만든 사람. 방장이 나가면 다음 사람에게 넘어가고, 빈 방은 자동 삭제
 - [x] 이모티콘: 이미지 이모티콘, 텍스트와 섞어서 한 말풍선에 입력 순서대로 표시
 - [x] 1:1 게임 초대: 상대 선택, 수락/거절, 15초 응답 제한, 게임 중이거나 초대 대기 중이면 중복 신청 불가
+  - 게임 선택은 게임별 카드 화면에서 고름
+  - 신청 후 대기 창에 남은 시간 표시, 보낸 사람은 **신청 취소** 가능 (`GAME_INVITE_CANCEL`)
 - [x] 틱택토: 서버가 턴, 좌표 유효성, 승리·무승부 판정
-- [x] 가위바위보: 두 사람이 모두 고르면 서버가 판정 (10초 제한)
+- [x] 가위바위보: 두 사람이 모두 고르면 서버가 판정 (10초 제한), 손 모양 그림으로 표시
 - [x] **다인용 게임: 시간 맞추기 (2~5명)**, 채팅방 단위 대기실
 - [x] 게임 중 상대가 나가거나 연결이 끊기면 감지해서 기권 처리
 
 ### 추가 기능
 - [x] 게임 전적: 승/패/무, 승률, 게임별 기록. 서버를 다시 켜도 유지(`data/stats.csv`)
-- [ ] 재대결
+- [x] 재대결: 게임 종료 창에 **재대결 / 전적 보기 / 닫기** 버튼
+  - 1:1 게임은 같은 상대에게 같은 게임으로 다시 초대 (초대 흐름 재사용)
+  - 다인용 게임은 같은 게임의 대기실을 다시 엶
+  - 새 게임이 시작되면 이전 결과 창은 자동으로 닫힘
 - [ ] 채팅 기록 저장 및 재입장 시 불러오기 선택
 - [ ] 다인용 게임 추가 (폭탄 돌리기, 끝말잇기)
 - [ ] 랭킹 / 게임 중 채팅 / 관전 / 방 비밀번호
@@ -102,9 +107,17 @@ src/main/java/playtalk/
     ├── ClientMain           실행 진입점
     ├── net/ServerConnection 소켓 수신 스레드 → Swing 스레드로 메시지 전달
     ├── ui/                  LoginDialog, MainFrame(3단), RoomListPanel, ChatPanel, MemberPanel,
-    │                        CreateRoomDialog, StatsDialog, Theme(색·글꼴), components/
-    └── game/                GameController (초대·대기실·게임 창 관리), GameWindow (게임 창 공통 틀)
+    │                        CreateRoomDialog, StatsDialog, Theme(색·글꼴)
+    │   └── components/      FlatButton, RoundedPanel, Avatar, HandIcon(가위바위보 손), ScaledImageIcon
+    └── game/                GameController (초대·대기실·게임 창 관리), GameWindow (게임 창 공통 틀, 재대결 버튼)
+        │                    GameChoiceDialog (게임 선택 카드), InviteDialog (받은 초대),
+        │                    WaitingDialog (보낸 초대 대기·취소), LobbyDialog (다인용 대기실)
         └── games/           TicTacToeWindow, RpsWindow, TimingWindow
+
+src/main/resources/
+├── emoticons/               이모티콘 이미지
+├── games/                   게임 선택 카드 그림
+└── hands/                   가위바위보 손 그림 (rock, paper, scissors)
 ```
 
 ## 구조 설명
@@ -147,7 +160,7 @@ src/main/java/playtalk/
 3. **클라이언트** `client/game/games/BombWindow.java`: `GameWindow` 상속 (`onStart`, `onState` 구현)
    그리고 `GameWindowRegistry`에 `FACTORIES.put(GameType.BOMB, BombWindow::new);` 추가
 
-초대, 대기실, 게임 시작/종료, 기권, 연결 끊김, 전적 기록은 공통 코드가 처리합니다.
+초대(신청 취소 포함), 대기실, 게임 시작/종료, 기권, 연결 끊김, 전적 기록, 재대결은 공통 코드가 처리합니다.
 
 ## 디자인 변경 시
 
