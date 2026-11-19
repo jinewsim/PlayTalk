@@ -28,6 +28,9 @@ public class RoomManager {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("a h:mm", Locale.KOREAN);
 
+    /** 한 번에 불러오는 이전 대화 개수 */
+    private static final int HISTORY_LIMIT = 50;
+
     private final PlayTalkServer server;
     private final Map<Integer, ChatRoom> rooms = new LinkedHashMap<>();
     private final List<BiConsumer<ClientHandler, ChatRoom>> leaveListeners = new CopyOnWriteArrayList<>();
@@ -42,6 +45,7 @@ public class RoomManager {
         router.on(MessageType.ROOM_JOIN, this::handleJoin);
         router.on(MessageType.ROOM_LEAVE, (user, msg) -> leave(user));
         router.on(MessageType.CHAT, this::handleChat);
+        router.on(MessageType.CHAT_HISTORY_REQUEST, this::handleHistory);
     }
 
     /** 사용자가 방을 나갈 때(연결 끊김 포함) 호출될 리스너. 잠금 밖에서 호출된다. */
@@ -118,21 +122,37 @@ public class RoomManager {
         if (text.length() > Protocol.CHAT_MAX_LENGTH) {
             text = text.substring(0, Protocol.CHAT_MAX_LENGTH);
         }
+        String time = LocalTime.now().format(TIME_FMT);
+        server.chatHistory().add(room.getId(), room.getTitle(), user.nickname(), text, time);
         room.broadcast(Message.of(MessageType.CHAT)
                 .put("roomId", room.getId())
                 .put("from", user.nickname())
                 .put("text", text)
-                .put("time", LocalTime.now().format(TIME_FMT)));
+                .put("time", time));
+    }
+
+    /** 방에 들어온 사람이 요청하면, 들어오기 전까지의 이전 대화를 보내 준다 */
+    private void handleHistory(ClientHandler user, Message msg) {
+        ChatRoom room = user.getRoom();
+        if (room == null || room.getId() != msg.getInt("roomId", -1)) return;
+        List<String[]> rows = new ArrayList<>();
+        for (ChatHistory.Entry e : server.chatHistory().recent(room.getId(), msg.getLong("upTo", 0), HISTORY_LIMIT)) {
+            rows.add(new String[]{e.from(), e.text(), e.time()});
+        }
+        user.send(Message.of(MessageType.CHAT_HISTORY).put("roomId", room.getId()).putTable("messages", rows));
     }
 
     // ------------------------------------------------------------------ join / leave
 
     private void afterJoin(ClientHandler user, ChatRoom room) {
+        long upToNow = server.chatHistory().lastSeq(room.getId()); // 이 번호까지가 "들어오기 전 대화"
         user.send(Message.of(MessageType.ROOM_JOINED)
                 .put("roomId", room.getId())
                 .put("title", room.getTitle())
                 .put("max", room.getMaxUsers())
-                .put("owner", room.getOwner()));
+                .put("owner", room.getOwner())
+                .put("history", server.chatHistory().recent(room.getId(), upToNow, HISTORY_LIMIT).size())
+                .put("historyUpTo", upToNow));
         room.broadcast(Message.of(MessageType.SYSTEM).put("text", user.nickname() + " 님이 입장했습니다."));
         broadcastMembers(room);
         broadcastRoomList();
@@ -164,6 +184,7 @@ public class RoomManager {
             }
             broadcastMembers(room);
         } else {
+            server.chatHistory().closeRoom(room.getId());
             Log.info("방 삭제 #%d '%s'", room.getId(), room.getTitle());
         }
         broadcastRoomList();

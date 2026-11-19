@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.function.IntConsumer;
 
 
 /**
@@ -30,7 +31,7 @@ public class GameController {
     private final Map<String, GameWindow> windows = new HashMap<>();
     /** 게임이 끝났지만 아직 화면에 열려 있는 창들 (재대결 시작 때 닫기 위해 보관) */
     private final List<GameWindow> endedWindows = new ArrayList<>();
-    private Runnable statsOpener = () -> { };
+    private IntConsumer statsOpener;
     private final Map<String, InviteDialog> invites = new HashMap<>();
     private final Map<String, WaitingDialog> waiting = new HashMap<>();
     private final LobbyDialog lobbyDialog;
@@ -70,8 +71,7 @@ public class GameController {
             return;
         }
         GameType[] options = Arrays.stream(GameType.values()).filter(t -> !t.isOneOnOne()).toArray(GameType[]::new);
-        GameType type = (GameType) JOptionPane.showInputDialog(frame, "방 사람들과 함께할 게임을 고르세요.",
-                "다인용 게임", JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+        GameType type = GameChoiceDialog.choose(frame, "다인용 게임", "방 사람들과 함께할 게임을 고르세요.", options);
         if (type == null) return;
         connection.send(Message.of(MessageType.LOBBY_OPEN).put("game", type.name()));
     }
@@ -82,7 +82,7 @@ public class GameController {
         lobbyDialog.setVisible(false);
     }
     /** 게임 창의 "전적 보기" 버튼이 호출할 동작 (메인 화면의 전적 창 열기) */
-    public void setStatsOpener(Runnable statsOpener) {
+    public void setStatsOpener(IntConsumer statsOpener) {
         this.statsOpener = statsOpener;
     }
 
@@ -169,7 +169,10 @@ public class GameController {
         GameSessionInfo info = new GameSessionInfo(msg.get("sessionId"), type, me, msg.getList("players"), connection);
         closeEndedWindows(info);
         GameWindow window = GameWindowRegistry.create(frame, info);
-        window.setOnShowStats(statsOpener);
+        int roomId = msg.getInt("roomId", -1);
+        window.setOnShowStats(() -> {
+            if (statsOpener != null) statsOpener.accept(roomId);
+        });
         windows.put(info.sessionId(), window);
         window.setVisible(true);
         window.onStart(msg);

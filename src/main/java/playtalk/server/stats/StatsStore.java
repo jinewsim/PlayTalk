@@ -18,6 +18,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 
 /**
  * 사용자별 게임 전적. 서버를 다시 켜도 유지되도록 CSV 파일에 저장한다.
@@ -34,23 +35,40 @@ public class StatsStore {
 
     private final Path file;
     private final Map<String, Map<GameType, int[]>> stats = new HashMap<>();
+    /** roomId → 닉네임 → [승, 패, 무]. 채팅방별 전적은 서버가 켜져 있는 동안만 보관한다. */
+    private final Map<Integer, Map<String, int[]>> roomStats = new HashMap<>();
 
     public StatsStore(Path file) {
         this.file = file;
         load();
     }
 
-    public synchronized void record(GameType type, GameResult result) {
+    public synchronized void record(GameType type, GameResult result, int roomId) {
         result.outcomes().forEach((nick, outcome) -> {
+            int[] roomRow = roomStats.computeIfAbsent(roomId, k -> new LinkedHashMap<>())
+                    .computeIfAbsent(nick, k -> new int[3]);
+            roomRow[outcomeIndex(outcome)]++;
             int[] row = stats.computeIfAbsent(nick, k -> new EnumMap<>(GameType.class))
                     .computeIfAbsent(type, k -> new int[3]);
-            switch (outcome) {
-                case Protocol.OUTCOME_WIN -> row[WIN]++;
-                case Protocol.OUTCOME_LOSS -> row[LOSS]++;
-                default -> row[DRAW]++;
-            }
+            row[outcomeIndex(outcome)]++;
         });
         save();
+    }
+
+    private static int outcomeIndex(String outcome) {
+        return switch (outcome) {
+            case Protocol.OUTCOME_WIN -> WIN;
+            case Protocol.OUTCOME_LOSS -> LOSS;
+            default -> DRAW;
+        };
+    }
+
+    /** ROOM_STATS 응답 메시지 생성: 그 채팅방에서 한 게임의 사용자별 승/패/무 */
+    public synchronized Message roomStatsMessage(int roomId) {
+        List<String[]> rows = new ArrayList<>();
+        roomStats.getOrDefault(roomId, Map.of()).forEach((nick, r) ->
+                rows.add(new String[]{nick, String.valueOf(r[WIN]), String.valueOf(r[LOSS]), String.valueOf(r[DRAW])}));
+        return Message.of(MessageType.ROOM_STATS).put("roomId", roomId).putTable("users", rows);
     }
 
     /** STATS 응답 메시지 생성 */
@@ -67,6 +85,22 @@ public class StatsStore {
                 .put("nickname", nickname)
                 .put("win", total[WIN]).put("loss", total[LOSS]).put("draw", total[DRAW])
                 .putTable("games", rows);
+    }
+
+    /** RANKING 응답 메시지 생성: 사용자별 전체 승/패/무 (순서는 승리 횟수 내림차순) */
+    public synchronized Message rankingMessage() {
+        List<String[]> rows = new ArrayList<>();
+        for (var user : stats.entrySet()) {
+            int[] total = new int[3];
+            for (int[] r : user.getValue().values()) {
+                for (int i = 0; i < 3; i++) total[i] += r[i];
+            }
+            if (total[WIN] + total[LOSS] + total[DRAW] == 0) continue;
+            rows.add(new String[]{user.getKey(), String.valueOf(total[WIN]),
+                    String.valueOf(total[LOSS]), String.valueOf(total[DRAW])});
+        }
+        rows.sort((a, b) -> Integer.parseInt(b[1]) - Integer.parseInt(a[1]));
+        return Message.of(MessageType.RANKING).putTable("users", rows);
     }
 
     private void load() {

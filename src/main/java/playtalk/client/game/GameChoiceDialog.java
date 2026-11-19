@@ -21,6 +21,11 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridLayout;
+import java.awt.Color;
+import java.awt.geom.Arc2D;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.RoundRectangle2D;
+import java.awt.geom.QuadCurve2D;
 import java.awt.RenderingHints;
 
 /** 게임을 고르는 창: 게임마다 큰 카드 버튼을 보여주고, 누르면 바로 선택된다. */
@@ -87,7 +92,9 @@ public class GameChoiceDialog extends JDialog {
         return switch (type) {
             case TIC_TAC_TOE -> new GridIcon(ICON_HEIGHT);
             case ROCK_PAPER_SCISSORS -> new ScaledImageIcon("/games/rps.png", 120, ICON_HEIGHT);
-            default -> new TextIcon("\uD83C\uDFAE", 48, ICON_HEIGHT); // 🎮
+            case TIMING -> new StopwatchIcon(ICON_HEIGHT);
+            case BOMB -> new BombIcon(ICON_HEIGHT);
+            default -> new TextIcon("🎮", 48, ICON_HEIGHT); // 🎮
         };
     }
 
@@ -160,6 +167,105 @@ public class GameChoiceDialog extends JDialog {
             FontMetrics fm = g2.getFontMetrics();
             g2.drawString(text, x + (width - fm.stringWidth(text)) / 2,
                     y + (height + fm.getAscent() - fm.getDescent()) / 2);
+            g2.dispose();
+        }
+    }
+
+    /** 시간 맞추기: 스톱워치 */
+    private static class StopwatchIcon implements Icon {
+
+        private final int box;
+
+        StopwatchIcon(int box) {
+            this.box = box;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return box;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return box;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.translate(x, y);
+            g2.scale(box / 56.0, box / 56.0);
+            Color rim = new Color(0xF97316);
+            // 윗 버튼과 옆 버튼
+            g2.setColor(new Color(0x475569));
+            g2.fill(new RoundRectangle2D.Double(22, 1, 12, 6, 3, 3));
+            g2.setStroke(new BasicStroke(3.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.drawLine(28, 6, 28, 11);
+            g2.setColor(rim);
+            g2.drawLine(43, 13, 47, 9);
+            // 몸통: 주황 테두리 + 흰 얼굴
+            g2.setColor(rim);
+            g2.fill(new Ellipse2D.Double(5, 9, 46, 46));
+            g2.setColor(Color.WHITE);
+            g2.fill(new Ellipse2D.Double(9, 13, 38, 38));
+            // 지나간 시간 부채꼴
+            g2.setColor(new Color(0xFED7AA));
+            g2.fill(new Arc2D.Double(11, 15, 34, 34, 90, -100, Arc2D.PIE));
+            // 눈금 4개
+            g2.setColor(new Color(0x9A3412));
+            g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.drawLine(28, 15, 28, 18);
+            g2.drawLine(28, 47, 28, 44);
+            g2.drawLine(11, 32, 14, 32);
+            g2.drawLine(45, 32, 42, 32);
+            // 바늘
+            g2.setColor(new Color(0x1E293B));
+            g2.setStroke(new BasicStroke(2.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.drawLine(28, 32, 28, 20);
+            g2.drawLine(28, 32, 36, 37);
+            g2.setColor(new Color(0xEF4444));
+            g2.fill(new Ellipse2D.Double(25.5, 29.5, 5, 5));
+            g2.dispose();
+        }
+    }
+
+    /** 폭탄 돌리기: 폭탄 */
+    private static class BombIcon implements Icon {
+
+        private final int box;
+
+        BombIcon(int box) {
+            this.box = box;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return box;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return box;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.translate(x, y);
+            g2.scale(box / 56.0, box / 56.0);
+            g2.setColor(new Color(0x22262E));
+            g2.fill(new Ellipse2D.Double(5, 15, 38, 38));
+            g2.setColor(new Color(0x4A5160));
+            g2.fill(new Ellipse2D.Double(12, 22, 9, 9));
+            g2.setColor(new Color(0x8A6D3B));
+            g2.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.draw(new QuadCurve2D.Double(34, 18, 42, 8, 47, 6));
+            g2.setColor(new Color(0xF59E0B));
+            g2.fill(new Ellipse2D.Double(42, 0, 11, 11));
+            g2.setColor(new Color(0xFDE68A));
+            g2.fill(new Ellipse2D.Double(45, 3, 5, 5));
             g2.dispose();
         }
     }

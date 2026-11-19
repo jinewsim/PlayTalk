@@ -3,6 +3,7 @@ package playtalk.client.game;
 import playtalk.client.game.games.RpsWindow;
 import playtalk.client.game.games.TicTacToeWindow;
 import playtalk.client.game.games.TimingWindow;
+import playtalk.client.game.games.BombWindow;
 import playtalk.common.GameType;
 
 import javax.swing.JFrame;
@@ -23,6 +24,7 @@ public final class GameWindowRegistry {
         FACTORIES.put(GameType.TIC_TAC_TOE, TicTacToeWindow::new);
         FACTORIES.put(GameType.ROCK_PAPER_SCISSORS, RpsWindow::new);
         FACTORIES.put(GameType.TIMING, TimingWindow::new);
+        FACTORIES.put(GameType.BOMB, BombWindow::new);
     }
 
     private GameWindowRegistry() {

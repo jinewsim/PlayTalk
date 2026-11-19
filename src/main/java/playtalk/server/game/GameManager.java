@@ -294,7 +294,8 @@ public class GameManager implements GameContext {
             if (p instanceof ClientHandler c) c.setGameSessionId(id);
         }
         Message start = Message.of(MessageType.GAME_START)
-                .put("sessionId", id).put("game", type.name()).putList("players", names);
+                .put("sessionId", id).put("game", type.name()).putList("players", names)
+                .put("roomId", room == null ? -1 : room.getId());
         session.fillStartMessage(start);
         for (Participant p : list) p.send(start);
 
@@ -341,7 +342,7 @@ public class GameManager implements GameContext {
                 c.setGameSessionId(null);
             }
         }
-        server.stats().record(session.getType(), result);
+        server.stats().record(session.getType(), result, room == null ? -1 : room.getId());
 
         List<String[]> rows = new ArrayList<>();
         result.outcomes().forEach((nick, outcome) -> rows.add(new String[]{nick, outcome}));
