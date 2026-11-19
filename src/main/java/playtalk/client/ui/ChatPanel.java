@@ -51,6 +51,10 @@ public class ChatPanel extends JPanel {
     private final JTextArea input = new JTextArea(2, 20);
     private final String myNickname;
     private String lastSender;
+    /** 이전 대화 불러오기 안내 줄 (없으면 null) */
+    private JComponent historyBanner;
+    /** 0 이상이면 새 줄을 맨 아래가 아니라 이 위치에 끼워 넣는다 (이전 대화를 위쪽에 채울 때) */
+    private int insertAt = -1;
 
     public ChatPanel(String myNickname, Consumer<String> onSend, Runnable onMultiGame, Runnable onLeave) {
         this.myNickname = myNickname;
@@ -219,6 +223,8 @@ public class ChatPanel extends JPanel {
     public void showRoom(String title, int max, String owner) {
         messages.removeAll();
         lastSender = null;
+        historyBanner = null;
+        insertAt = -1;
         titleLabel.setText("# " + title);
         setOwner(owner);
         setMemberCount(1, max);
@@ -226,6 +232,68 @@ public class ChatPanel extends JPanel {
         messages.revalidate();
         messages.repaint();
         input.requestFocusInWindow();
+    }
+
+    /**
+     * 방에 들어왔을 때 "이전 대화 N개가 있어요" 안내 줄을 맨 위에 보여준다.
+     * 불러오기를 누르면 onLoad를 실행하고, 그 뒤 {@link #showHistory}가 이 자리에 이전 대화를 채운다.
+     */
+    public void showHistoryOffer(int count, Runnable onLoad) {
+        JLabel label = new JLabel("이 방에 이전 대화 " + count + "개가 있어요.");
+        label.setFont(Theme.font(12));
+        label.setForeground(Theme.TEXT_MUTED);
+        FlatButton load = new FlatButton("불러오기", FlatButton.Style.PRIMARY).radius(10);
+        load.setBorder(Theme.padding(3, 10));
+        FlatButton skip = new FlatButton("안 볼래요", FlatButton.Style.GHOST).radius(10);
+        skip.setBorder(Theme.padding(3, 10));
+
+        RoundedPanel pill = new RoundedPanel(new FlowLayout(FlowLayout.CENTER, 8, 0), Theme.SURFACE_LOW, 14);
+        pill.setBorder(Theme.padding(6, 12));
+        pill.add(label);
+        pill.add(load);
+        pill.add(skip);
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+        row.setOpaque(false);
+        row.setBorder(BorderFactory.createEmptyBorder(10, 0, 2, 0));
+        row.add(pill);
+
+        load.addActionListener(e -> {
+            load.setEnabled(false);
+            label.setText("이전 대화를 불러오는 중...");
+            onLoad.run();
+        });
+        skip.addActionListener(e -> removeHistoryBanner());
+        historyBanner = row;
+        addRow(row);
+    }
+
+    /** CHAT_HISTORY 수신: 안내 줄이 있던 자리에 이전 대화를 채운다 */
+    public void showHistory(java.util.List<String[]> rows) {
+        if (historyBanner == null) return; // 이미 닫았거나 다른 방으로 옮겨 감
+        int index = messages.getComponentZOrder(historyBanner);
+        removeHistoryBanner();
+        if (index < 0) index = 0;
+        insertAt = index;
+        lastSender = null;
+        for (String[] r : rows) {
+            if (r.length >= 3) appendChat(r[0], r[1], r[2]);
+        }
+        lastSender = null;
+        appendNotice(rows.isEmpty() ? "불러올 이전 대화가 없어요." : "여기까지가 이전 대화예요.",
+                Theme.TEXT_SUBTLE, Theme.SURFACE_LOW);
+        insertAt = -1;
+        lastSender = null;
+        messages.revalidate();
+        messages.repaint();
+    }
+
+    private void removeHistoryBanner() {
+        if (historyBanner != null) {
+            messages.remove(historyBanner);
+            historyBanner = null;
+            messages.revalidate();
+            messages.repaint();
+        }
     }
 
     public void showEmpty() {
@@ -245,30 +313,37 @@ public class ChatPanel extends JPanel {
         boolean continued = from.equals(lastSender);
         lastSender = from;
 
+        // 내 메시지는 오른쪽(아바타·이름 없이), 다른 사람 메시지는 왼쪽
         JPanel row = new JPanel(new BorderLayout(10, 0));
         row.setOpaque(false);
-        row.setBorder(BorderFactory.createEmptyBorder(continued ? 2 : 10, 18, 0, 60));
+        row.setBorder(mine
+                ? BorderFactory.createEmptyBorder(continued ? 2 : 10, 60, 0, 18)
+                : BorderFactory.createEmptyBorder(continued ? 2 : 10, 18, 0, 60));
 
-        JLabel avatar = new JLabel(continued ? null : new Avatar(from, 36));
-        avatar.setPreferredSize(new Dimension(36, continued ? 1 : 36));
-        avatar.setVerticalAlignment(SwingConstants.TOP);
-        JPanel avatarWrap = new JPanel(new BorderLayout());
-        avatarWrap.setOpaque(false);
-        avatarWrap.add(avatar, BorderLayout.NORTH);
-        row.add(avatarWrap, BorderLayout.WEST);
+        if (!mine) {
+            JLabel avatar = new JLabel(continued ? null : new Avatar(from, 36));
+            avatar.setPreferredSize(new Dimension(36, continued ? 1 : 36));
+            avatar.setVerticalAlignment(SwingConstants.TOP);
+            JPanel avatarWrap = new JPanel(new BorderLayout());
+            avatarWrap.setOpaque(false);
+            avatarWrap.add(avatar, BorderLayout.NORTH);
+            row.add(avatarWrap, BorderLayout.WEST);
+        }
 
         JPanel body = new JPanel(new BorderLayout(0, 4));
         body.setOpaque(false);
         if (!continued) {
-            JPanel head = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+            JPanel head = new JPanel(new FlowLayout(mine ? FlowLayout.RIGHT : FlowLayout.LEFT, 6, 0));
             head.setOpaque(false);
-            JLabel name = new JLabel(from + (mine ? " (나)" : ""));
-            name.setFont(Theme.bold(13));
-            name.setForeground(Theme.avatarColor(from));
             JLabel t = new JLabel(time);
             t.setFont(Theme.font(11));
             t.setForeground(Theme.TEXT_SUBTLE);
-            head.add(name);
+            if (!mine) {
+                JLabel name = new JLabel(from);
+                name.setFont(Theme.bold(13));
+                name.setForeground(Theme.avatarColor(from));
+                head.add(name);
+            }
             head.add(t);
             body.add(head, BorderLayout.NORTH);
         }
@@ -278,7 +353,7 @@ public class ChatPanel extends JPanel {
         bubble.add(richText(text), BorderLayout.CENTER);
         JPanel bubbleWrap = new JPanel(new BorderLayout());
         bubbleWrap.setOpaque(false);
-        bubbleWrap.add(bubble, BorderLayout.WEST);
+        bubbleWrap.add(bubble, mine ? BorderLayout.EAST : BorderLayout.WEST);
         body.add(bubbleWrap, BorderLayout.CENTER);
         row.add(body, BorderLayout.CENTER);
 
@@ -310,6 +385,11 @@ public class ChatPanel extends JPanel {
 
     private void addRow(JComponent row) {
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        if (insertAt >= 0) { // 이전 대화를 위쪽에 채우는 중: 아래로 스크롤하지 않는다
+            messages.add(row, insertAt++);
+            messages.revalidate();
+            return;
+        }
         messages.add(row);
         messages.revalidate();
         SwingUtilities.invokeLater(() -> {

@@ -30,11 +30,11 @@ import java.util.Map;
  */
 public class TimingGame extends GameSession {
 
-    public static final long TARGET_MS = 10_000;
-    public static final long VISIBLE_MS = 3_000;
+    public static final long TARGET_MS = 5_000;
+    public static final long VISIBLE_MS = 2_000;
     public static final int COUNTDOWN = 3;
     /** 목표 시간 + 이 시간이 지나도록 안 누르면 기록 없음 처리 */
-    public static final long GRACE_MS = 5_000;
+    public static final long GRACE_MS = 3_000;
 
     private final Map<Participant, Long> records = new LinkedHashMap<>();
     private long startedAt;

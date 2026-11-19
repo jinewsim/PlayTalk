@@ -32,7 +32,7 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 | `ROOM_CREATE` | C→S | title, max(2~5) | 만든 사람은 자동 입장 + 방장 |
 | `ROOM_JOIN` | C→S | roomId | 다른 방에 있으면 자동으로 나간 뒤 입장 |
 | `ROOM_LEAVE` | C→S | | |
-| `ROOM_JOINED` | S→C | roomId, title, max, owner | |
+| `ROOM_JOINED` | S→C | roomId, title, max, owner, history, historyUpTo | |
 | `ROOM_LEFT` | S→C | roomId | |
 | `ROOM_MEMBERS` | S→C | roomId, owner, members(표: nickname, status `IDLE`/`IN_GAME`) | 방 인원/상태 변동 시 방 전체에게 |
 | `ROOM_FAIL` | S→C | reason | 인원 초과 등 |
@@ -43,6 +43,8 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 |---|---|---|---|
 | `CHAT` | C→S | text | 이모티콘은 `:이름:` 코드로 본문에 포함 |
 | `CHAT` | S→C | roomId, from, text, time | 같은 방 사람에게만 |
+| `CHAT_HISTORY_REQUEST` | C→S | roomId, upTo | |
+| `CHAT_HISTORY` | S→C | roomId, messages(표: from, text, time) | |
 | `SYSTEM` | S→C | text | 입장/퇴장, 게임 시작/결과 안내 |
 | `ERROR` | S→C | text | 요청 거부 사유 |
 
@@ -72,7 +74,7 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 
 | 타입 | 방향 | key | 설명 |
 |---|---|---|---|
-| `GAME_START` | S→C | sessionId, game, players(목록) + 게임별 값 | |
+| `GAME_START` | S→C | sessionId, game, players(목록), roomId + 게임별 값 | |
 | `GAME_ACTION` | C→S | sessionId + 게임별 값 | |
 | `GAME_STATE` | S→C | sessionId, game + 게임별 값 | |
 | `GAME_END` | S→C | sessionId, game, results(표: nickname, `WIN`/`LOSS`/`DRAW`), summary | |
@@ -96,9 +98,17 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 - STATE: `event=COUNTDOWN count` → `event=RUNNING` → `event=STOPPED nickname` → `event=REVEAL records(표: nickname, elapsedMs, diffMs)` (-1 = 기록 없음)
 - 시간은 서버가 `RUNNING`을 보낸 순간부터 `STOP`을 받은 순간까지 잽니다.
 
+### 폭탄 돌리기 `BOMB` (2~5명)
+- ACTION: `action=PASS`, `target`
+- STATE: `event=HOLDER nickname from passes` → `event=DANGER` → `event=EXPLODE nickname`
+
 ## 전적
 
 | 타입 | 방향 | key |
 |---|---|---|
 | `STATS_REQUEST` | C→S | nickname(생략 시 본인) |
 | `STATS` | S→C | nickname, win, loss, draw, games(표: game, win, loss, draw) |
+| `ROOM_STATS_REQUEST` | C→S | roomId |
+| `ROOM_STATS` | S→C | roomId, users(표: nickname, win, loss, draw) |
+| `RANKING_REQUEST` | C→S | (없음) |
+| `RANKING` | S→C | users(표: nickname, win, loss, draw) |

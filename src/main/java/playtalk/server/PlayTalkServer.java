@@ -6,6 +6,7 @@ import playtalk.common.Protocol;
 import playtalk.server.game.GameManager;
 import playtalk.server.game.GameRegistry;
 import playtalk.server.room.RoomManager;
+import playtalk.server.room.ChatHistory;
 import playtalk.server.stats.StatsStore;
 
 import java.io.IOException;
@@ -34,6 +35,7 @@ public class PlayTalkServer {
     private final RoomManager rooms;
     private final GameManager games;
     private final StatsStore stats;
+    private final ChatHistory chatHistory;
     private final ExecutorService clientPool = Executors.newCachedThreadPool();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private volatile ServerSocket serverSocket;
@@ -41,12 +43,16 @@ public class PlayTalkServer {
     public PlayTalkServer(int port, Path dataDir) {
         this.port = port;
         this.stats = new StatsStore(dataDir.resolve("stats.csv"));
+        this.chatHistory = new ChatHistory(dataDir.resolve("chat"));
         this.rooms = new RoomManager(this);
         this.games = new GameManager(this, new GameRegistry(), scheduler);
 
         router.on(MessageType.LOGIN, this::handleLogin);
         router.on(MessageType.STATS_REQUEST, (user, msg) ->
                 user.send(stats.statsMessage(msg.get("nickname", user.nickname()))));
+        router.on(MessageType.ROOM_STATS_REQUEST, (user, msg) ->
+                user.send(stats.roomStatsMessage(msg.getInt("roomId", -1))));
+        router.on(MessageType.RANKING_REQUEST, (user, msg) -> user.send(stats.rankingMessage()));
         rooms.registerHandlers(router);
         games.registerHandlers(router);
         rooms.addLeaveListener(games::onRoomLeave);
@@ -135,6 +141,10 @@ public class PlayTalkServer {
 
     public GameManager games() {
         return games;
+    }
+
+    public ChatHistory chatHistory() {
+        return chatHistory;
     }
 
     public StatsStore stats() {

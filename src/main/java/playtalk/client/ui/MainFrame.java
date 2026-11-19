@@ -37,6 +37,7 @@ public class MainFrame extends JFrame {
     private int currentRoomId = -1;
     private int currentRoomMax;
     private boolean waitingStatsDialog;
+    private boolean waitingRanking;
 
     public MainFrame(ServerConnection connection, String nickname) {
         super("PlayTalk - " + nickname);
@@ -47,7 +48,7 @@ public class MainFrame extends JFrame {
         chat = new ChatPanel(nickname, this::sendChat, () -> games().openMultiGame(), this::leaveRoom);
         members = new MemberPanel(nickname, target -> games().challenge(target));
         games = new GameController(this, connection, nickname, chat);
-        games.setStatsOpener(this::openStats);
+        games.setStatsOpener(this::openRoomStats);
 
         JPanel root = new JPanel(new BorderLayout());
         root.add(buildTopBar(), BorderLayout.NORTH);
@@ -96,8 +97,12 @@ public class MainFrame extends JFrame {
         FlatButton stats = new FlatButton("내 전적", FlatButton.Style.DARK);
         stats.setBorder(Theme.padding(5, 12));
         stats.addActionListener(e -> openStats());
+        FlatButton ranking = new FlatButton("랭킹", FlatButton.Style.DARK);
+        ranking.setBorder(Theme.padding(5, 12));
+        ranking.addActionListener(e -> openRanking());
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         right.setOpaque(false);
+        right.add(ranking);
         right.add(stats);
 
         bar.add(left, BorderLayout.WEST);
@@ -116,6 +121,15 @@ public class MainFrame extends JFrame {
             currentRoomMax = msg.getInt("max", 5);
             roomList.setCurrentRoom(currentRoomId);
             chat.showRoom(msg.get("title"), currentRoomMax, msg.get("owner"));
+
+            int history = msg.getInt("history", 0);
+            if (history > 0) {
+                int roomId = currentRoomId;
+                long upTo = msg.getLong("historyUpTo", 0);
+                chat.showHistoryOffer(history, () -> connection.send(Message.of(MessageType.CHAT_HISTORY_REQUEST)
+                        .put("roomId", roomId).put("upTo", upTo)));
+            }
+
             games.onRoomChanged();
         });
         connection.on(MessageType.ROOM_LEFT, msg -> {
@@ -140,6 +154,10 @@ public class MainFrame extends JFrame {
                 chat.appendChat(msg.get("from"), msg.get("text"), msg.get("time"));
             }
         });
+
+        connection.on(MessageType.CHAT_HISTORY, msg -> {
+            if (msg.getInt("roomId", -1) == currentRoomId) chat.showHistory(msg.getTable("messages"));
+        });
         connection.on(MessageType.SYSTEM, msg -> chat.appendSystem(msg.get("text")));
         connection.on(MessageType.ERROR, msg -> {
             if (!games.showErrorInGame(msg.get("text"))) {
@@ -156,6 +174,12 @@ public class MainFrame extends JFrame {
                 new StatsDialog(this, msg).setVisible(true);
             }
         });
+        connection.on(MessageType.RANKING, msg -> {
+            if (!waitingRanking) return;
+            waitingRanking = false;
+            RankingDialog.global(this, msg, nickname).setVisible(true);
+        });
+        connection.on(MessageType.ROOM_STATS, msg -> RankingDialog.room(this, msg, nickname).setVisible(true));
         // 게임이 끝나면 전적 갱신
         connection.on(MessageType.GAME_END, msg -> connection.send(Message.of(MessageType.STATS_REQUEST)));
 
@@ -188,6 +212,15 @@ public class MainFrame extends JFrame {
         connection.send(Message.of(MessageType.CHAT).put("text", text));
     }
 
+    /** 게임 창의 "전적 보기": 그 게임을 한 채팅방의 전적만 요청한다 */
+    private void openRoomStats(int roomId) {
+        connection.send(Message.of(MessageType.ROOM_STATS_REQUEST).put("roomId", roomId));
+    }
+
+    private void openRanking() {
+        waitingRanking = true;
+        connection.send(Message.of(MessageType.RANKING_REQUEST));
+    }
     private void openStats() {
         waitingStatsDialog = true;
         connection.send(Message.of(MessageType.STATS_REQUEST));

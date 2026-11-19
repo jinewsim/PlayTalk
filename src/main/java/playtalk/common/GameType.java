@@ -14,7 +14,8 @@ public enum GameType {
 
     TIC_TAC_TOE("틱택토", 2, 2),
     ROCK_PAPER_SCISSORS("가위바위보", 2, 2),
-    TIMING("시간 맞추기", 2, 5);
+    TIMING("시간 맞추기", 2, 5),
+    BOMB("폭탄 돌리기", 2, 5);
 
     private final String displayName;
     private final int minPlayers;

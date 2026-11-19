@@ -5,6 +5,7 @@ import playtalk.server.Participant;
 import playtalk.server.game.games.RockPaperScissorsGame;
 import playtalk.server.game.games.TicTacToeGame;
 import playtalk.server.game.games.TimingGame;
+import playtalk.server.game.games.BombGame;
 
 import java.util.EnumMap;
 import java.util.List;
@@ -27,7 +28,7 @@ public class GameRegistry {
         register(GameType.TIC_TAC_TOE, TicTacToeGame::new);
         register(GameType.ROCK_PAPER_SCISSORS, RockPaperScissorsGame::new);
         register(GameType.TIMING, TimingGame::new);
-        // 예) register(GameType.BOMB, BombGame::new);
+        register(GameType.BOMB, BombGame::new);
     }
 
     public void register(GameType type, Factory factory) {

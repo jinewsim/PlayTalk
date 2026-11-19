@@ -30,7 +30,7 @@ public enum MessageType {
     ROOM_JOIN,
     /** C→S (내용 없음) */
     ROOM_LEAVE,
-    /** S→C roomId, title, max, owner: 내가 방에 들어감 */
+    /** S→C roomId, title, max, owner, history(불러올 수 있는 이전 대화 수), historyUpTo: 내가 방에 들어감 */
     ROOM_JOINED,
     /** S→C roomId: 내가 방에서 나감 */
     ROOM_LEFT,
@@ -42,6 +42,10 @@ public enum MessageType {
     // ---------------------------------------------------------- 채팅
     /** C→S text / S→C roomId, from, text, time */
     CHAT,
+    /** C→S roomId, upTo (ROOM_JOINED의 historyUpTo): 이전 대화 불러오기 요청 */
+    CHAT_HISTORY_REQUEST,
+    /** S→C roomId, messages(표: from, text, time): 오래된 것부터 */
+    CHAT_HISTORY,
     /** S→C text: 입장/퇴장 등 시스템 안내 */
     SYSTEM,
 
@@ -86,6 +90,16 @@ public enum MessageType {
     STATS_REQUEST,
     /** S→C nickname, win, loss, draw, games(표: game, win, loss, draw) */
     STATS,
+
+    /** C→S (key 없음) */
+    RANKING_REQUEST,
+    /** S→C users(표: nickname, win, loss, draw) — 전적이 있는 모든 사용자, 정렬은 클라이언트가 한다 */
+    RANKING,
+
+    /** C→S roomId */
+    ROOM_STATS_REQUEST,
+    /** S→C roomId, users(표: nickname, win, loss, draw) — 그 채팅방에서 한 게임의 전적만 (서버를 끄면 초기화) */
+    ROOM_STATS,
 
     // ---------------------------------------------------------- 기타
     /** S→C text: 요청 처리 실패 안내 */
