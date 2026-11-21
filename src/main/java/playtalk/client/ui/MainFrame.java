@@ -33,6 +33,7 @@ public class MainFrame extends JFrame {
     private final RoomListPanel roomList;
     private final ChatPanel chat;
     private final MemberPanel members;
+    private final FriendPanel friends;
     private final GameController games;
     private int currentRoomId = -1;
     private int currentRoomMax;
@@ -46,7 +47,8 @@ public class MainFrame extends JFrame {
 
         roomList = new RoomListPanel(nickname, this::joinRoom, this::createRoom, this::openStats);
         chat = new ChatPanel(nickname, this::sendChat, () -> games().openMultiGame(), this::leaveRoom);
-        members = new MemberPanel(nickname, target -> games().challenge(target));
+        friends = new FriendPanel(this::requestFriend, this::replyFriend, this::removeFriend);
+        members = new MemberPanel(nickname, target -> games().challenge(target), friends);
         games = new GameController(this, connection, nickname, chat);
         games.setStatsOpener(this::openRoomStats);
 
@@ -159,6 +161,11 @@ public class MainFrame extends JFrame {
             if (msg.getInt("roomId", -1) == currentRoomId) chat.showHistory(msg.getTable("messages"));
         });
         connection.on(MessageType.SYSTEM, msg -> chat.appendSystem(msg.get("text")));
+        connection.on(MessageType.FRIEND_LIST, friends::setFriendList);
+        connection.on(MessageType.FRIEND_NOTICE, msg -> friends.showNotice(msg.get("text"), msg.getBoolean("error")));
+        connection.on(MessageType.FRIEND_REQUEST, msg ->
+                friends.showNotice(msg.get("from") + " 님이 친구 요청을 보냈습니다.", false));
+
         connection.on(MessageType.ERROR, msg -> {
             if (!games.showErrorInGame(msg.get("text"))) {
                 if (currentRoomId >= 0) chat.appendError(msg.get("text"));
@@ -202,6 +209,19 @@ public class MainFrame extends JFrame {
         if (r != null) {
             connection.send(Message.of(MessageType.ROOM_CREATE).put("title", r.title()).put("max", r.max()));
         }
+    }
+
+    // ---- 친구
+    private void requestFriend(String target) {
+        connection.send(Message.of(MessageType.FRIEND_REQUEST).put("target", target));
+    }
+
+    private void replyFriend(String from, boolean accept) {
+        connection.send(Message.of(MessageType.FRIEND_REPLY).put("from", from).put("accept", accept));
+    }
+
+    private void removeFriend(String target) {
+        connection.send(Message.of(MessageType.FRIEND_REMOVE).put("target", target));
     }
 
     private void leaveRoom() {
