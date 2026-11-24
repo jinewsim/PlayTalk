@@ -9,8 +9,14 @@ package playtalk.common;
  */
 public enum MessageType {
 
-    // ---------------------------------------------------------- 접속
-    /** C→S nickname */
+    // ---------------------------------------------------------- 회원가입 / 접속
+    /** C→S nickname, password: 계정 만들기 (로그인 전에 보낼 수 있음) */
+    REGISTER,
+    /** S→C nickname: 가입 성공 (클라이언트는 이어서 LOGIN을 보낸다) */
+    REGISTER_OK,
+    /** S→C reason */
+    REGISTER_FAIL,
+    /** C→S nickname, password */
     LOGIN,
     /** S→C nickname */
     LOGIN_OK,
@@ -100,6 +106,18 @@ public enum MessageType {
     ROOM_STATS_REQUEST,
     /** S→C roomId, users(표: nickname, win, loss, draw) — 그 채팅방에서 한 게임의 전적만 (서버를 끄면 초기화) */
     ROOM_STATS,
+
+    // ---------------------------------------------------------- 친구
+    /** C→S target: 친구 요청 보내기 / S→C from: 친구 요청을 받음 (실시간 알림) */
+    FRIEND_REQUEST,
+    /** C→S from, accept(true/false): 받은 친구 요청에 답하기 */
+    FRIEND_REPLY,
+    /** C→S target: 친구 삭제, 또는 내가 보낸 요청 취소 */
+    FRIEND_REMOVE,
+    /** S→C friends(표: nickname, online), received(목록), sent(목록): 로그인 시, 친구 관계·접속 상태가 바뀔 때마다 */
+    FRIEND_LIST,
+    /** S→C text, error(true면 요청 거부 사유): 친구 관련 안내 (요청 보냄, 수락됨, 없는 사용자 등) */
+    FRIEND_NOTICE,
 
     // ---------------------------------------------------------- 기타
     /** S→C text: 요청 처리 실패 안내 */

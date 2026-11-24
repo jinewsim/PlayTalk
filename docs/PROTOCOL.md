@@ -14,13 +14,16 @@ CHAT	roomId=1	from=민수	text=안녕하세요 :smile:	time=오후 2:14
 
 C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 
-## 접속
+## 회원가입 / 접속
 
 | 타입 | 방향 | key | 설명 |
 |---|---|---|---|
-| `LOGIN` | C→S | nickname | 첫 메시지. 로그인 전에는 다른 요청 불가 |
-| `LOGIN_OK` | S→C | nickname | 성공. 바로 이어서 `ROOM_LIST`, `USER_LIST` 전송 |
-| `LOGIN_FAIL` | S→C | reason | 형식 오류, 닉네임 중복 |
+| `REGISTER` | C→S | nickname, password | 계정 만들기. 로그인 전에 보낼 수 있는 메시지는 `REGISTER`, `LOGIN`뿐 |
+| `REGISTER_OK` | S→C | nickname | 가입 성공. 클라이언트는 같은 연결로 바로 `LOGIN`을 보냄 |
+| `REGISTER_FAIL` | S→C | reason | 형식 오류(닉네임 1~12자, 비밀번호 4~20자), 이미 가입된 닉네임 |
+| `LOGIN` | C→S | nickname, password | |
+| `LOGIN_OK` | S→C | nickname | 성공. 바로 이어서 `ROOM_LIST`, `USER_LIST`, `FRIEND_LIST` 전송 |
+| `LOGIN_FAIL` | S→C | reason | 가입되지 않은 닉네임, 비밀번호 틀림, 이미 접속 중인 계정 |
 | `LOGOUT` | C→S | | 정상 종료 |
 | `USER_LIST` | S→C | users(목록) | 접속자 변동 시 전체에게 |
 
@@ -101,6 +104,17 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 ### 폭탄 돌리기 `BOMB` (2~5명)
 - ACTION: `action=PASS`, `target`
 - STATE: `event=HOLDER nickname from passes` → `event=DANGER` → `event=EXPLODE nickname`
+
+## 친구
+
+| 타입 | 방향 | key | 설명 |
+|---|---|---|---|
+| `FRIEND_REQUEST` | C→S | target | 가입된 사용자에게 요청 (오프라인이어도 가능, 다음 로그인 때 확인). 상대가 이미 나에게 요청했다면 바로 친구가 됨 |
+| `FRIEND_REQUEST` | S→C | from | 받는 사람이 접속 중이면 실시간 알림 |
+| `FRIEND_REPLY` | C→S | from, accept(true/false) | 받은 요청에 수락/거절. 거절은 보낸 사람에게 따로 알리지 않음 |
+| `FRIEND_REMOVE` | C→S | target | 친구 삭제 (양쪽 모두에서 삭제), 또는 내가 보낸 요청 취소 |
+| `FRIEND_LIST` | S→C | friends(표: nickname, online), received(목록), sent(목록) | 로그인 시, 친구 관계가 바뀔 때, 친구가 접속/종료할 때 관련된 사람에게 전체 목록을 다시 보냄 |
+| `FRIEND_NOTICE` | S→C | text, error | 친구 관련 안내. `error=true`면 요청 거부 사유 (없는 사용자, 이미 친구, 자기 자신 등) |
 
 ## 전적
 

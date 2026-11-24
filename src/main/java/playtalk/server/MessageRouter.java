@@ -25,8 +25,9 @@ public class MessageRouter {
     }
 
     public void dispatch(ClientHandler client, Message message) {
-        if (!client.isLoggedIn() && message.getType() != MessageType.LOGIN) {
-            client.sendError("먼저 닉네임으로 접속해야 합니다.");
+        if (!client.isLoggedIn() && message.getType() != MessageType.LOGIN
+                && message.getType() != MessageType.REGISTER) {
+            client.sendError("먼저 로그인해야 합니다.");
             return;
         }
         BiConsumer<ClientHandler, Message> handler = handlers.get(message.getType());

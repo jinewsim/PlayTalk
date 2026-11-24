@@ -9,19 +9,28 @@ import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.ListCellRenderer;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.GridLayout;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** 오른쪽 사이드바: 현재 방 참여자(상태, 1:1 대결 신청) + 전체 접속자 (디스코드의 멤버 목록 자리). */
+/**
+ * 오른쪽 사이드바 (디스코드의 멤버 목록 자리).
+ * 위: 현재 방 참여자(상태, 1:1 대결 신청) / 아래: [친구 | 전체 접속자] 탭.
+ */
 public class MemberPanel extends JPanel {
 
     public record Member(String nickname, boolean inGame, boolean owner) {
@@ -32,10 +41,13 @@ public class MemberPanel extends JPanel {
     private final JList<Member> memberList = new JList<>(members);
     private final DefaultListModel<String> online = new DefaultListModel<>();
     private final JLabel memberTitle = sectionTitle("방 참여자");
-    private final JLabel onlineTitle = sectionTitle("전체 접속자");
     private final FlatButton challenge = new FlatButton("1:1 대결 신청");
+    private final FlatButton friendTab = tabButton();
+    private final FlatButton onlineTab = tabButton();
+    private int onlineCount;
+    private int friendRequestCount;
 
-    public MemberPanel(String myNickname, Consumer<String> onChallenge) {
+    public MemberPanel(String myNickname, Consumer<String> onChallenge, FriendPanel friends) {
         super(new GridLayout(2, 1, 0, 12));
         this.myNickname = myNickname;
         setBackground(Theme.SURFACE_LOW);
@@ -75,13 +87,73 @@ public class MemberPanel extends JPanel {
             return l;
         });
         onlineList.setFocusable(false);
-        JPanel onlineSection = new JPanel(new BorderLayout(0, 6));
-        onlineSection.setOpaque(false);
-        onlineSection.add(onlineTitle, BorderLayout.NORTH);
-        onlineSection.add(scroll(onlineList), BorderLayout.CENTER);
+        onlineList.setToolTipText("우클릭: 친구 요청 보내기");
+        JPopupMenu onlineMenu = new JPopupMenu();
+        JMenuItem addFriend = new JMenuItem("친구 요청 보내기");
+        onlineMenu.add(addFriend);
+        onlineList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (!e.isPopupTrigger() && !SwingUtilities.isRightMouseButton(e)) return;
+                int idx = onlineList.locationToIndex(e.getPoint());
+                if (idx < 0 || !onlineList.getCellBounds(idx, idx).contains(e.getPoint())) return;
+                String nick = online.get(idx);
+                if (nick.equals(myNickname)) return;
+                for (var l : addFriend.getActionListeners()) addFriend.removeActionListener(l);
+                addFriend.addActionListener(a -> friends.requestFriend(nick));
+                onlineMenu.show(onlineList, e.getX(), e.getY());
+            }
+        });
+
+        // ---- 아래쪽: [친구 | 전체 접속자] 탭
+        CardLayout cards = new CardLayout();
+        JPanel cardPanel = new JPanel(cards);
+        cardPanel.setOpaque(false);
+        cardPanel.add(friends, "friends");
+        cardPanel.add(scroll(onlineList), "online");
+        friendTab.addActionListener(e -> {
+            cards.show(cardPanel, "friends");
+            selectTab(friendTab);
+        });
+        onlineTab.addActionListener(e -> {
+            cards.show(cardPanel, "online");
+            selectTab(onlineTab);
+        });
+        friends.setOnReceivedCountChanged(n -> {
+            friendRequestCount = n;
+            updateTabTitles();
+        });
+        JPanel tabs = new JPanel(new GridLayout(1, 2, 4, 0));
+        tabs.setOpaque(false);
+        tabs.add(friendTab);
+        tabs.add(onlineTab);
+        selectTab(friendTab);
+        updateTabTitles();
+
+        JPanel bottomSection = new JPanel(new BorderLayout(0, 8));
+        bottomSection.setOpaque(false);
+        bottomSection.add(tabs, BorderLayout.NORTH);
+        bottomSection.add(cardPanel, BorderLayout.CENTER);
 
         add(roomSection);
-        add(onlineSection);
+        add(bottomSection);
+    }
+
+    private void selectTab(FlatButton selected) {
+        friendTab.setStyle(selected == friendTab ? FlatButton.Style.SECONDARY : FlatButton.Style.GHOST);
+        onlineTab.setStyle(selected == onlineTab ? FlatButton.Style.SECONDARY : FlatButton.Style.GHOST);
+    }
+
+    private void updateTabTitles() {
+        friendTab.setText(friendRequestCount > 0 ? "친구 (요청 " + friendRequestCount + ")" : "친구");
+        onlineTab.setText("접속자 " + onlineCount);
+    }
+
+    private static FlatButton tabButton() {
+        FlatButton b = new FlatButton("", FlatButton.Style.GHOST);
+        b.setFont(Theme.bold(12));
+        b.setBorder(Theme.padding(6, 6));
+        return b;
     }
 
     /** ROOM_MEMBERS 수신 */
@@ -116,7 +188,8 @@ public class MemberPanel extends JPanel {
     public void setOnlineUsers(List<String> users) {
         online.clear();
         users.forEach(online::addElement);
-        onlineTitle.setText("전체 접속자  " + users.size());
+        onlineCount = users.size();
+        updateTabTitles();
     }
 
     private void updateChallengeButton() {

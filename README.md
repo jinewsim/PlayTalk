@@ -7,7 +7,7 @@
 
 | 개발 언어 | GUI | 통신 | 동시 처리 | 데이터 저장 |
 |---|---|---|---|---|
-| Java 17+ | Swing | TCP `Socket` / `ServerSocket` | 클라이언트별 스레드 + 동기화 | 서버 측 파일(전적 CSV, 채팅 로그) |
+| Java 17+ | Swing | TCP `Socket` / `ServerSocket` | 클라이언트별 스레드 + 동기화 | 서버 측 파일(계정·친구·전적 CSV, 채팅 로그) |
 
 외부 라이브러리 없이 JDK만으로 동작합니다.
 
@@ -35,14 +35,14 @@ javac -encoding UTF-8 -d out/classes $(find src/main/java -name '*.java')
 javac -encoding UTF-8 -d out/test -cp out/classes src/test/java/playtalk/ServerSmokeTest.java
 java -cp out/classes:out/test playtalk.ServerSmokeTest      # Windows는 ':' 대신 ';'
 ```
-가짜 클라이언트 5명으로 로그인부터 게임, 연결 끊김까지 31개 항목을 검사합니다. 서버 코드를 고친 뒤 push 전에 돌려 주세요.
+가짜 클라이언트 5명으로 회원가입·로그인부터 친구, 게임, 연결 끊김, 서버 재시작 후 데이터 유지까지 54개 항목을 검사합니다. 서버 코드를 고친 뒤 push 전에 돌려 주세요.
 
 ---
 
 ## 기능 구현 현황
 
 ### 필수 기능
-- [x] 닉네임 접속, 중복 닉네임 거부, 접속 종료 시 닉네임 반납
+- [x] 회원가입 / 로그인: 닉네임 + 비밀번호(4~20자). 비밀번호는 salt + SHA-256 해시로만 저장(`data/accounts.csv`), 같은 계정 중복 접속 거부
 - [x] 전체 접속자 목록 실시간 반영
 - [x] 실시간 채팅 (같은 방에만 전달)
 - [x] 다중 채팅방: 생성(최대 인원 2~5명), 입장, 퇴장, 방 이동, 인원 초과 시 입장 제한
@@ -68,8 +68,12 @@ java -cp out/classes:out/test playtalk.ServerSmokeTest      # Windows는 ':' 대
   - 방이 삭제되면(마지막 사람이 나감) 불러오기는 불가, 파일 기록만 남음
 - [x] 다인용 게임: **폭탄 돌리기 (2~5명)** — 폭발 시각은 서버만 알고, 터지기 3초 전에 경고 효과
 - [x] 랭킹: 전체 사용자 승률순 (3판 이상만 표시)
+- [x] 친구: 닉네임으로 친구 요청, 수락/거절, 보낸 요청 취소, 친구 삭제
+  - 오른쪽 사이드바 **[친구 | 접속자]** 탭. 친구는 온라인/오프라인으로 나눠 표시하고 접속·종료가 실시간 반영
+  - 상대가 오프라인이어도 요청 가능 (다음 로그인 때 확인), 서로 요청하면 바로 친구
+  - 접속자 목록에서 우클릭으로 친구 요청, 친구를 우클릭하면 삭제
+  - 서버를 다시 켜도 유지(`data/friends.csv`)
 
-- [ ] 회원가입 (회원 비밀번호 여부)
 - [ ] 게임 중 채팅
 - [ ] 관전
 - [ ] 방 비밀번호
@@ -105,7 +109,9 @@ src/main/java/playtalk/
 │   ├── PlayTalkServer       accept 루프, 매니저 연결, 로그인/접속 종료
 │   ├── ClientHandler        클라이언트 1명 = 스레드 1개 (수신 루프, 동기화된 송신)
 │   ├── MessageRouter        메시지 타입 → 처리 함수
-│   ├── UserManager          접속자, 닉네임 중복 검사
+│   ├── UserManager          접속자, 같은 계정 중복 접속 검사
+│   ├── account/             AccountStore (회원 계정, 비밀번호 해시 저장)
+│   ├── friend/              FriendStore (친구 관계·요청 파일 저장), FriendManager (요청·수락·삭제, 접속 상태 알림)
 │   ├── room/                ChatRoom, RoomManager (방 생성·입장·퇴장·채팅), ChatHistory (대화 저장·불러오기)
 │   ├── game/                GameManager (초대·대기실·세션), GameSession (게임 공통 틀)
 │   │   └── games/           TicTacToeGame, RockPaperScissorsGame, TimingGame, BombGame
@@ -114,7 +120,7 @@ src/main/java/playtalk/
 └── client/
     ├── ClientMain           실행 진입점
     ├── net/ServerConnection 소켓 수신 스레드 → Swing 스레드로 메시지 전달
-    ├── ui/                  LoginDialog, MainFrame(3단), RoomListPanel, ChatPanel, MemberPanel,
+    ├── ui/                  LoginDialog(로그인/회원가입), MainFrame(3단), RoomListPanel, ChatPanel, MemberPanel, FriendPanel,
     │                        CreateRoomDialog, StatsDialog, RankingDialog, Theme(색·글꼴)
     │   └── components/      FlatButton, RoundedPanel, Avatar, HandIcon(가위바위보 손), ScaledImageIcon
     └── game/                GameController (초대·대기실·게임 창 관리), GameWindow (게임 창 공통 틀, 재대결 버튼)

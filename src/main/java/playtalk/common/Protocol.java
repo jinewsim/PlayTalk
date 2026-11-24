@@ -41,4 +41,19 @@ public final class Protocol {
         }
         return null;
     }
+
+    public static final int PASSWORD_MIN_LENGTH = 4;
+    public static final int PASSWORD_MAX_LENGTH = 20;
+
+    /** 비밀번호 형식 검사: 4~20자, 공백 불가 */
+    public static String validatePassword(String password) {
+        if (password == null || password.isEmpty()) return "비밀번호를 입력하세요.";
+        if (password.length() < PASSWORD_MIN_LENGTH || password.length() > PASSWORD_MAX_LENGTH) {
+            return "비밀번호는 " + PASSWORD_MIN_LENGTH + "~" + PASSWORD_MAX_LENGTH + "자로 입력하세요.";
+        }
+        for (char ch : password.toCharArray()) {
+            if (Character.isWhitespace(ch) || Character.isISOControl(ch)) return "비밀번호에 공백은 쓸 수 없습니다.";
+        }
+        return null;
+    }
 }

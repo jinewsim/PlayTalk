@@ -6,7 +6,7 @@ import java.io.*; import java.net.*; import java.nio.file.*; import java.util.*;
 
 /**
  * 서버 통합 테스트 (JUnit 없이 main으로 실행).
- * 가짜 클라이언트 5명을 소켓으로 접속시켜 로그인, 채팅방, 채팅, 초대, 틱택토, 가위바위보,
+ * 가짜 클라이언트 5명을 소켓으로 접속시켜 회원가입, 로그인, 친구, 채팅방, 채팅, 초대, 틱택토, 가위바위보,
  * 시간 맞추기(다인용), 연결 끊김, 방장 위임까지 실제 프로토콜로 검사한다.
  *
  * <pre>
@@ -23,6 +23,9 @@ public class ServerSmokeTest {
     C(String n,int port) throws Exception { name=n; s=new Socket("127.0.0.1",port); in=new BufferedReader(new InputStreamReader(s.getInputStream(),"UTF-8")); out=new PrintWriter(new OutputStreamWriter(s.getOutputStream(),"UTF-8"),true);
       Thread t=new Thread(()->{try{String l;while((l=in.readLine())!=null)q.add(Message.decode(l));}catch(Exception e){}}); t.setDaemon(true); t.start(); }
     void send(Message m){ out.println(m.encode()); }
+    /** 회원가입 후 로그인 */
+    void join(String nick) throws Exception { send(Message.of(MessageType.REGISTER).put("nickname",nick).put("password","pw"+nick)); await(MessageType.REGISTER_OK); login(nick); }
+    void login(String nick) throws Exception { send(Message.of(MessageType.LOGIN).put("nickname",nick).put("password","pw"+nick)); await(MessageType.LOGIN_OK); }
     Message await(MessageType t) throws Exception { return await(t, m->true); }
     Message await(MessageType t, java.util.function.Predicate<Message> p) throws Exception {
       for(Iterator<Message> it=seen.iterator(); it.hasNext();){ Message m=it.next(); if(m.getType()==t && p.test(m)){ it.remove(); return m; } }
@@ -41,11 +44,16 @@ public class ServerSmokeTest {
     check(Emoticons.split("hi :smile: yo :nope:").size()==3,"emoticon split");
 
     C a=new C("A",19090), b=new C("B",19090), c=new C("C",19090), d=new C("D",19090);
-    a.send(Message.of(MessageType.LOGIN).put("nickname","Alex")); check(a.await(MessageType.LOGIN_OK)!=null,"login Alex");
-    b.send(Message.of(MessageType.LOGIN).put("nickname","Alex")); Message f=b.await(MessageType.LOGIN_FAIL); check(f.get("reason").contains("이미"),"duplicate nickname rejected");
-    b.send(Message.of(MessageType.LOGIN).put("nickname","민수")); b.await(MessageType.LOGIN_OK);
-    c.send(Message.of(MessageType.LOGIN).put("nickname","지은")); c.await(MessageType.LOGIN_OK);
-    d.send(Message.of(MessageType.LOGIN).put("nickname","Dana")); d.await(MessageType.LOGIN_OK);
+    // 회원가입 / 로그인
+    b.send(Message.of(MessageType.LOGIN).put("nickname","Alex").put("password","pwAlex")); check(b.await(MessageType.LOGIN_FAIL).get("reason").contains("가입되지 않은"),"login before register rejected");
+    b.send(Message.of(MessageType.ROOM_CREATE).put("title","x").put("max",2)); check(b.await(MessageType.ERROR).get("text").contains("로그인"),"request before login rejected");
+    a.send(Message.of(MessageType.REGISTER).put("nickname","Alex").put("password","12")); check(a.await(MessageType.REGISTER_FAIL).get("reason").contains("4~20"),"short password rejected");
+    a.join("Alex"); check(true,"register + login Alex");
+    b.send(Message.of(MessageType.REGISTER).put("nickname","Alex").put("password","other1")); check(b.await(MessageType.REGISTER_FAIL).get("reason").contains("이미 가입"),"duplicate account rejected");
+    b.send(Message.of(MessageType.LOGIN).put("nickname","Alex").put("password","wrong1")); check(b.await(MessageType.LOGIN_FAIL).get("reason").contains("비밀번호"),"wrong password rejected");
+    b.send(Message.of(MessageType.LOGIN).put("nickname","Alex").put("password","pwAlex")); check(b.await(MessageType.LOGIN_FAIL).get("reason").contains("이미 접속"),"double login rejected");
+    String acc=Files.readString(data.resolve("accounts.csv")); check(acc.contains("Alex,") && !acc.contains("pwAlex"),"account saved, password hashed");
+    b.join("민수"); c.join("지은"); d.join("Dana");
     Message ul=a.await(MessageType.USER_LIST, m->m.getList("users").size()==4); check(ul!=null,"user list has 4");
 
     a.send(Message.of(MessageType.ROOM_CREATE).put("title","게임방").put("max",3));
@@ -108,11 +116,49 @@ public class ServerSmokeTest {
     check(end.getTable("results").stream().anyMatch(r->r[0].equals("지은")&&r[1].equals("LOSS")),"disconnected player loses");
     a.seen.clear(); Message ul2=a.await(MessageType.USER_LIST, m->!m.getList("users").contains("지은")); check(ul2!=null,"disconnected user removed from list");
     // nickname reusable
-    C e=new C("E",19090); e.send(Message.of(MessageType.LOGIN).put("nickname","지은")); Thread.sleep(300); Message el=e.await(MessageType.LOGIN_OK); check(el!=null,"nickname reusable after disconnect");
+    C e=new C("E",19090); Thread.sleep(300); e.login("지은"); check(true,"account can log in again after disconnect");
     // owner transfer
     a.send(Message.of(MessageType.ROOM_LEAVE)); Message mm=b.await(MessageType.ROOM_MEMBERS, m->m.get("owner").equals("민수")); check(mm!=null,"owner transferred to 민수");
     // forfeit
     b.send(Message.of(MessageType.ROOM_LEAVE)); b.await(MessageType.ROOM_LEFT);
+
+    // 친구
+    a.send(Message.of(MessageType.FRIEND_REQUEST).put("target","민수"));
+    check(!a.await(MessageType.FRIEND_NOTICE).getBoolean("error"),"friend request sent");
+    check(b.await(MessageType.FRIEND_REQUEST).get("from").equals("Alex"),"friend request received live");
+    check(b.await(MessageType.FRIEND_LIST, m->m.getList("received").contains("Alex"))!=null,"request in receiver's list");
+    a.send(Message.of(MessageType.FRIEND_REQUEST).put("target","민수")); check(a.await(MessageType.FRIEND_NOTICE, m->m.getBoolean("error")).get("text").contains("이미"),"duplicate friend request rejected");
+    a.send(Message.of(MessageType.FRIEND_REQUEST).put("target","Alex")); check(a.await(MessageType.FRIEND_NOTICE, m->m.getBoolean("error")).get("text").contains("자기 자신"),"self friend rejected");
+    a.send(Message.of(MessageType.FRIEND_REQUEST).put("target","없는사람")); check(a.await(MessageType.FRIEND_NOTICE, m->m.getBoolean("error")).get("text").contains("가입되지"),"unknown user rejected");
+    b.send(Message.of(MessageType.FRIEND_REPLY).put("from","Alex").put("accept",true));
+    check(a.await(MessageType.FRIEND_LIST, m->m.getTable("friends").stream().anyMatch(r->r[0].equals("민수")&&r[1].equals("true")))!=null,"accepted: 민수 online in Alex's list");
+    check(a.await(MessageType.FRIEND_NOTICE, m->m.get("text").contains("수락"))!=null,"requester notified of accept");
+    // 서로 요청하면 바로 친구
+    d.send(Message.of(MessageType.FRIEND_REQUEST).put("target","Alex")); d.await(MessageType.FRIEND_NOTICE);
+    a.send(Message.of(MessageType.FRIEND_REQUEST).put("target","Dana"));
+    check(d.await(MessageType.FRIEND_LIST, m->m.getTable("friends").stream().anyMatch(r->r[0].equals("Alex")))!=null,"mutual requests become friends");
+    // 보낸 요청 취소, 거절
+    a.send(Message.of(MessageType.FRIEND_REQUEST).put("target","지은")); e.await(MessageType.FRIEND_LIST, m->m.getList("received").contains("Alex"));
+    a.send(Message.of(MessageType.FRIEND_REMOVE).put("target","지은"));
+    check(e.await(MessageType.FRIEND_LIST, m->m.getList("received").isEmpty())!=null,"sent request cancelled");
+    e.send(Message.of(MessageType.FRIEND_REQUEST).put("target","민수")); b.await(MessageType.FRIEND_REQUEST);
+    b.send(Message.of(MessageType.FRIEND_REPLY).put("from","지은").put("accept",false));
+    check(e.await(MessageType.FRIEND_LIST, m->m.getList("sent").isEmpty())!=null,"declined request removed");
+    String fr=Files.readString(data.resolve("friends.csv")); check(fr.contains("FRIEND,Alex,민수") && fr.contains("FRIEND,Alex,Dana"),"friends saved to file");
+    // 접속 상태
+    b.s.close();
+    check(a.await(MessageType.FRIEND_LIST, m->m.getTable("friends").stream().anyMatch(r->r[0].equals("민수")&&r[1].equals("false")))!=null,"friend shown offline after disconnect");
+    C b2=new C("B2",19090); b2.login("민수");
+    check(b2.await(MessageType.FRIEND_LIST, m->m.getTable("friends").stream().anyMatch(r->r[0].equals("Alex")))!=null,"friend list sent on login");
+    check(a.await(MessageType.FRIEND_LIST, m->m.getTable("friends").stream().anyMatch(r->r[0].equals("민수")&&r[1].equals("true")))!=null,"friend shown online after login");
+    a.send(Message.of(MessageType.FRIEND_REMOVE).put("target","민수"));
+    check(b2.await(MessageType.FRIEND_LIST, m->m.getTable("friends").isEmpty())!=null,"unfriend removes from both");
+    // 서버를 다시 켜도 계정·친구 유지
+    srv.stop(); Thread.sleep(300);
+    PlayTalkServer srv2=new PlayTalkServer(19091,data); new Thread(()->{try{srv2.start();}catch(Exception ex){}}).start(); Thread.sleep(500);
+    C a2=new C("A2",19091); a2.login("Alex");
+    check(a2.await(MessageType.FRIEND_LIST, m->m.getTable("friends").stream().anyMatch(r->r[0].equals("Dana")&&r[1].equals("false")))!=null,"account and friends persist after restart");
+    srv2.stop();
     System.out.println(fails==0?"ALL PASSED":("FAILURES: "+fails));
     srv.stop(); System.exit(fails==0?0:1);
   }

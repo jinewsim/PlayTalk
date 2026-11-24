@@ -3,6 +3,9 @@ package playtalk.server;
 import playtalk.common.Message;
 import playtalk.common.MessageType;
 import playtalk.common.Protocol;
+import playtalk.server.account.AccountStore;
+import playtalk.server.friend.FriendManager;
+import playtalk.server.friend.FriendStore;
 import playtalk.server.game.GameManager;
 import playtalk.server.game.GameRegistry;
 import playtalk.server.room.RoomManager;
@@ -25,6 +28,7 @@ import java.util.concurrent.ScheduledExecutorService;
  *   <li>메인 스레드: {@link ServerSocket#accept()}로 접속을 받아 클라이언트마다 {@link ClientHandler} 스레드 생성</li>
  *   <li>{@link MessageRouter}: 메시지 타입별로 담당 매니저에 전달</li>
  *   <li>{@link UserManager} 접속자 / {@link RoomManager} 채팅방 / {@link GameManager} 게임 / {@link StatsStore} 전적</li>
+ *   <li>{@link AccountStore} 회원 계정 / {@link FriendManager} 친구</li>
  * </ul>
  */
 public class PlayTalkServer {
@@ -36,6 +40,8 @@ public class PlayTalkServer {
     private final GameManager games;
     private final StatsStore stats;
     private final ChatHistory chatHistory;
+    private final AccountStore accounts;
+    private final FriendManager friends;
     private final ExecutorService clientPool = Executors.newCachedThreadPool();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private volatile ServerSocket serverSocket;
@@ -44,9 +50,12 @@ public class PlayTalkServer {
         this.port = port;
         this.stats = new StatsStore(dataDir.resolve("stats.csv"));
         this.chatHistory = new ChatHistory(dataDir.resolve("chat"));
+        this.accounts = new AccountStore(dataDir.resolve("accounts.csv"));
+        this.friends = new FriendManager(this, new FriendStore(dataDir.resolve("friends.csv")));
         this.rooms = new RoomManager(this);
         this.games = new GameManager(this, new GameRegistry(), scheduler);
 
+        router.on(MessageType.REGISTER, this::handleRegister);
         router.on(MessageType.LOGIN, this::handleLogin);
         router.on(MessageType.STATS_REQUEST, (user, msg) ->
                 user.send(stats.statsMessage(msg.get("nickname", user.nickname()))));
@@ -55,6 +64,7 @@ public class PlayTalkServer {
         router.on(MessageType.RANKING_REQUEST, (user, msg) -> user.send(stats.rankingMessage()));
         rooms.registerHandlers(router);
         games.registerHandlers(router);
+        friends.registerHandlers(router);
         rooms.addLeaveListener(games::onRoomLeave);
     }
 
@@ -85,14 +95,30 @@ public class PlayTalkServer {
         scheduler.shutdownNow();
     }
 
-    // ------------------------------------------------------------------ login / logout
+    // ------------------------------------------------------------------ register / login / logout
+
+    private void handleRegister(ClientHandler client, Message msg) {
+        if (client.isLoggedIn()) return;
+        String nickname = msg.get("nickname").trim();
+        String error = accounts.register(nickname, msg.get("password"));
+        if (error != null) {
+            client.send(Message.of(MessageType.REGISTER_FAIL).put("reason", error));
+            return;
+        }
+        client.send(Message.of(MessageType.REGISTER_OK).put("nickname", nickname));
+    }
 
     private void handleLogin(ClientHandler client, Message msg) {
         if (client.isLoggedIn()) return;
         String nickname = msg.get("nickname").trim();
         String error = Protocol.validateNickname(nickname);
+        if (error == null && !accounts.check(nickname, msg.get("password"))) {
+            error = accounts.exists(nickname)
+                    ? "비밀번호가 올바르지 않습니다."
+                    : "가입되지 않은 닉네임입니다. 먼저 회원가입을 해 주세요.";
+        }
         if (error == null && !users.register(nickname, client)) {
-            error = "이미 사용 중인 닉네임입니다. 다른 닉네임을 입력하세요.";
+            error = "이미 접속 중인 계정입니다.";
         }
         if (error != null) {
             client.send(Message.of(MessageType.LOGIN_FAIL).put("reason", error));
@@ -103,6 +129,7 @@ public class PlayTalkServer {
         client.send(Message.of(MessageType.LOGIN_OK).put("nickname", nickname));
         client.send(rooms.roomListMessage());
         broadcastUserList();
+        friends.onLogin(client);
     }
 
     /** ClientHandler 스레드가 끝날 때 호출 (정상 종료, 비정상 끊김 모두) */
@@ -113,6 +140,7 @@ public class PlayTalkServer {
         users.remove(client);
         Log.info("접속 종료: %s", client.nickname());
         broadcastUserList();
+        friends.onLogout(client.nickname());
     }
 
     // ------------------------------------------------------------------ broadcast
@@ -149,5 +177,13 @@ public class PlayTalkServer {
 
     public StatsStore stats() {
         return stats;
+    }
+
+    public AccountStore accounts() {
+        return accounts;
+    }
+
+    public FriendManager friends() {
+        return friends;
     }
 }
