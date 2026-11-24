@@ -47,6 +47,7 @@ public class FriendPanel extends JPanel {
     private final Consumer<String> onRequest;
     private final BiConsumer<String, Boolean> onReply;
     private final Consumer<String> onRemove;
+    private Consumer<String> onChallenge = n -> { };
     private IntConsumer onReceivedCountChanged = n -> { };
 
     private final JTextField input = new JTextField();
@@ -101,6 +102,11 @@ public class FriendPanel extends JPanel {
         add(scroll, BorderLayout.CENTER);
 
         setFriendList(List.of(), List.of(), List.of());
+    }
+
+    /** 온라인 친구 옆 "대결" 버튼을 눌렀을 때 (채팅방 밖에서도 1:1 대결 신청 가능) */
+    public void setOnChallenge(Consumer<String> listener) {
+        this.onChallenge = listener;
     }
 
     /** 받은 친구 요청 수가 바뀔 때 호출 (탭 제목에 숫자 표시용) */
@@ -187,12 +193,21 @@ public class FriendPanel extends JPanel {
     }
 
     private JComponent friendRow(Friend f) {
+        FlatButton delete = small("삭제", FlatButton.Style.GHOST);
+        delete.setToolTipText(f.nickname() + " 님을 친구에서 삭제");
+        delete.addActionListener(e -> confirmRemove(f.nickname()));
+        FlatButton[] buttons = {delete};
+        if (f.online()) {
+            FlatButton battle = small("대결", FlatButton.Style.SOFT);
+            battle.setToolTipText(f.nickname() + " 님에게 1:1 대결 신청");
+            battle.addActionListener(e -> onChallenge.accept(f.nickname()));
+            buttons = new FlatButton[]{battle, delete};
+        }
         JComponent row = row(f.nickname(), f.online() ? Theme.SUCCESS : Theme.BORDER,
-                f.online() ? "온라인" : "오프라인", f.online() ? Theme.SUCCESS : Theme.TEXT_SUBTLE);
-        row.setToolTipText("우클릭: 친구 삭제");
+                f.online() ? "온라인" : "오프라인", f.online() ? Theme.SUCCESS : Theme.TEXT_SUBTLE, buttons);
         JPopupMenu menu = new JPopupMenu();
         JMenuItem remove = new JMenuItem("친구 삭제");
-        remove.addActionListener(e -> onRemove.accept(f.nickname()));
+        remove.addActionListener(e -> confirmRemove(f.nickname()));
         menu.add(remove);
         row.addMouseListener(new MouseAdapter() {
             @Override
@@ -201,6 +216,13 @@ public class FriendPanel extends JPanel {
             }
         });
         return row;
+    }
+
+    private void confirmRemove(String nickname) {
+        if (Dialogs.confirm(this, Dialogs.Kind.DANGER, nickname + " 님을 친구에서 삭제할까요?",
+                "상대의 친구 목록에서도 사라져요. 다시 친구가 되려면 친구 요청을 새로 보내야 해요.", "삭제")) {
+            onRemove.accept(nickname);
+        }
     }
 
     /** 아바타 + 닉네임/상태 + 오른쪽 버튼들로 된 한 줄 */

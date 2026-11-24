@@ -300,6 +300,14 @@ public class ChatPanel extends JPanel {
         cards.show(this, "empty");
     }
 
+    /** 방에 들어가기 전 화면(기본: 환영 문구)을 다른 화면(홈)으로 바꾼다 */
+    public void setEmptyView(JComponent view) {
+        remove(getComponent(0));
+        add(view, "empty", 0);
+        cards.show(this, "empty");
+        revalidate();
+    }
+
     public void setMemberCount(int current, int max) {
         countBadge.setText(current + "/" + max + "명");
     }

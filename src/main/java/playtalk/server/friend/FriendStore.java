@@ -95,6 +95,32 @@ public class FriendStore {
         return changed;
     }
 
+    /**
+     * 회원 탈퇴: 그 사용자의 친구 관계와 주고받은 요청을 모두 지운다.
+     *
+     * @return 영향을 받은 다른 사용자들 (목록을 다시 보내 줘야 하는 사람)
+     */
+    public synchronized Set<String> removeUser(String nickname) {
+        Set<String> affected = new LinkedHashSet<>();
+        for (String f : setOf(friends, nickname)) {
+            setOf(friends, f).remove(nickname);
+            affected.add(f);
+        }
+        for (String to : setOf(sent, nickname)) {
+            setOf(received, to).remove(nickname);
+            affected.add(to);
+        }
+        for (String from : setOf(received, nickname)) {
+            setOf(sent, from).remove(nickname);
+            affected.add(from);
+        }
+        friends.remove(nickname);
+        sent.remove(nickname);
+        received.remove(nickname);
+        save();
+        return affected;
+    }
+
     public synchronized boolean areFriends(String a, String b) {
         return setOf(friends, a).contains(b);
     }

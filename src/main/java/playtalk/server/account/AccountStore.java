@@ -68,6 +68,14 @@ public class AccountStore {
                 hash(account[0], password).getBytes(StandardCharsets.US_ASCII));
     }
 
+    /** 회원 탈퇴: 계정을 지운다. @return 지운 계정이 있었으면 true */
+    public synchronized boolean delete(String nickname) {
+        if (accounts.remove(nickname) == null) return false;
+        save();
+        Log.info("회원 탈퇴: %s", nickname);
+        return true;
+    }
+
     public synchronized boolean exists(String nickname) {
         return nickname != null && accounts.containsKey(nickname);
     }

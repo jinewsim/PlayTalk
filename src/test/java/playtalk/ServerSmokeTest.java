@@ -158,6 +158,23 @@ public class ServerSmokeTest {
     PlayTalkServer srv2=new PlayTalkServer(19091,data); new Thread(()->{try{srv2.start();}catch(Exception ex){}}).start(); Thread.sleep(500);
     C a2=new C("A2",19091); a2.login("Alex");
     check(a2.await(MessageType.FRIEND_LIST, m->m.getTable("friends").stream().anyMatch(r->r[0].equals("Dana")&&r[1].equals("false")))!=null,"account and friends persist after restart");
+    // 친구에게는 채팅방 없이 1:1 대결 신청
+    C d2=new C("D2",19091); d2.login("Dana"); C e2=new C("E2",19091); e2.login("지은");
+    a2.send(Message.of(MessageType.GAME_INVITE).put("target","지은").put("game","TIC_TAC_TOE"));
+    check(a2.await(MessageType.ERROR).get("text").contains("친구"),"non-friend invite outside room rejected");
+    a2.send(Message.of(MessageType.GAME_INVITE).put("target","Dana").put("game","TIC_TAC_TOE"));
+    Message fi=d2.await(MessageType.GAME_INVITE); check(fi.get("from").equals("Alex"),"friend invite without room");
+    d2.send(Message.of(MessageType.GAME_INVITE_REPLY).put("inviteId",fi.get("inviteId")).put("accept",true));
+    Message fs=a2.await(MessageType.GAME_START); check(fs.getInt("roomId",0)==-1,"friend game starts outside room");
+    a2.send(Message.of(MessageType.GAME_LEAVE).put("sessionId",fs.get("sessionId")));
+    check(d2.await(MessageType.GAME_END)!=null,"friend game ends on leave");
+    // 회원 탈퇴
+    e2.send(Message.of(MessageType.FRIEND_REQUEST).put("target","Alex")); a2.await(MessageType.FRIEND_LIST, m->m.getList("received").contains("지은"));
+    e2.send(Message.of(MessageType.ACCOUNT_DELETE).put("password","wrong1")); check(e2.await(MessageType.ACCOUNT_DELETE_FAIL).get("reason").contains("비밀번호"),"withdraw with wrong password rejected");
+    e2.send(Message.of(MessageType.ACCOUNT_DELETE).put("password","pw지은")); check(e2.await(MessageType.ACCOUNT_DELETED)!=null,"account deleted");
+    check(a2.await(MessageType.FRIEND_LIST, m->m.getList("received").isEmpty())!=null,"deleted user's friend request removed");
+    check(!Files.readString(data.resolve("accounts.csv")).contains("지은,") && !Files.readString(data.resolve("stats.csv")).contains("지은,"),"account and stats removed from files");
+    C e3=new C("E3",19091); e3.send(Message.of(MessageType.LOGIN).put("nickname","지은").put("password","pw지은")); check(e3.await(MessageType.LOGIN_FAIL).get("reason").contains("가입되지 않은"),"deleted account cannot log in");
     srv2.stop();
     System.out.println(fails==0?"ALL PASSED":("FAILURES: "+fails));
     srv.stop(); System.exit(fails==0?0:1);
