@@ -35,7 +35,7 @@ javac -encoding UTF-8 -d out/classes $(find src/main/java -name '*.java')
 javac -encoding UTF-8 -d out/test -cp out/classes src/test/java/playtalk/ServerSmokeTest.java
 java -cp out/classes:out/test playtalk.ServerSmokeTest      # Windows는 ':' 대신 ';'
 ```
-가짜 클라이언트 5명으로 회원가입·로그인부터 친구, 게임, 연결 끊김, 서버 재시작 후 데이터 유지까지 54개 항목을 검사합니다. 서버 코드를 고친 뒤 push 전에 돌려 주세요.
+가짜 클라이언트 5명으로 회원가입·로그인부터 친구, 게임, 연결 끊김, 서버 재시작 후 데이터 유지까지 63개 항목을 검사합니다. 서버 코드를 고친 뒤 push 전에 돌려 주세요.
 
 ---
 
@@ -43,12 +43,14 @@ java -cp out/classes:out/test playtalk.ServerSmokeTest      # Windows는 ':' 대
 
 ### 필수 기능
 - [x] 회원가입 / 로그인: 닉네임 + 비밀번호(4~20자). 비밀번호는 salt + SHA-256 해시로만 저장(`data/accounts.csv`), 같은 계정 중복 접속 거부
+- [x] 로그아웃 / 회원 탈퇴: 상단 **계정** 메뉴. 탈퇴는 비밀번호를 다시 확인하고 계정·친구·전적을 모두 삭제한 뒤 로그인 화면으로 돌아감
 - [x] 전체 접속자 목록 실시간 반영
 - [x] 실시간 채팅 (같은 방에만 전달)
 - [x] 다중 채팅방: 생성(최대 인원 2~5명), 입장, 퇴장, 방 이동, 인원 초과 시 입장 제한
 - [x] 방장: 방을 만든 사람. 방장이 나가면 다음 사람에게 넘어가고, 빈 방은 자동 삭제
 - [x] 이모티콘: 이미지 이모티콘, 텍스트와 섞어서 한 말풍선에 입력 순서대로 표시
 - [x] 1:1 게임 초대: 상대 선택, 수락/거절, 15초 응답 제한, 게임 중이거나 초대 대기 중이면 중복 신청 불가
+  - 같은 방 사람, 또는 **친구에게는 채팅방에 들어가지 않고도** 신청 가능 (홈 화면·친구 탭의 대결 버튼). 방 밖 대결은 방 전적에 넣지 않고 개인 전적에만 기록
   - 게임 선택은 게임별 카드 화면에서 고름
   - 신청 후 대기 창에 남은 시간 표시, 보낸 사람은 **신청 취소** 가능 (`GAME_INVITE_CANCEL`)
 - [x] 틱택토: 서버가 턴, 좌표 유효성, 승리·무승부 판정
@@ -71,8 +73,9 @@ java -cp out/classes:out/test playtalk.ServerSmokeTest      # Windows는 ':' 대
 - [x] 친구: 닉네임으로 친구 요청, 수락/거절, 보낸 요청 취소, 친구 삭제
   - 오른쪽 사이드바 **[친구 | 접속자]** 탭. 친구는 온라인/오프라인으로 나눠 표시하고 접속·종료가 실시간 반영
   - 상대가 오프라인이어도 요청 가능 (다음 로그인 때 확인), 서로 요청하면 바로 친구
-  - 접속자 목록에서 우클릭으로 친구 요청, 친구를 우클릭하면 삭제
+  - 접속자 목록에서 우클릭으로 친구 요청, 친구 옆 **삭제** 버튼(또는 우클릭)으로 삭제 (확인 창)
   - 서버를 다시 켜도 유지(`data/friends.csv`)
+- [x] 홈 화면: 채팅방에 들어가기 전 가운데 영역에 내 전적, 온라인 친구(바로 대결), 열려 있는 채팅방(바로 입장, 새 방 만들기), 랭킹 TOP 3 표시
 
 - [ ] 게임 중 채팅
 - [ ] 관전
@@ -120,8 +123,9 @@ src/main/java/playtalk/
 └── client/
     ├── ClientMain           실행 진입점
     ├── net/ServerConnection 소켓 수신 스레드 → Swing 스레드로 메시지 전달
-    ├── ui/                  LoginDialog(로그인/회원가입), MainFrame(3단), RoomListPanel, ChatPanel, MemberPanel, FriendPanel,
-    │                        CreateRoomDialog, StatsDialog, RankingDialog, Theme(색·글꼴)
+    ├── ui/                  LoginDialog(로그인/회원가입), MainFrame(3단), RoomListPanel, ChatPanel, MemberPanel, FriendPanel, HomePanel(홈 화면),
+    │                        CreateRoomDialog, StatsDialog, RankingDialog, Theme(색·글꼴, 팝업 메뉴 모양),
+    │                        Dialogs(테마에 맞춘 알림·확인·비밀번호 확인 창)
     │   └── components/      FlatButton, RoundedPanel, Avatar, HandIcon(가위바위보 손), ScaledImageIcon
     └── game/                GameController (초대·대기실·게임 창 관리), GameWindow (게임 창 공통 틀, 재대결 버튼)
         │                    GameChoiceDialog (게임 선택 카드), InviteDialog (받은 초대),
@@ -180,6 +184,16 @@ src/main/resources/
 ## 디자인 변경 시
 
 색과 글꼴은 `client/ui/Theme.java`에 모여 있습니다(Stitch 프로토타입 기준). Figma나 Stitch 디자인이 바뀌면 이 파일부터 수정하세요.
+
+- 알림·확인 창은 `JOptionPane` 대신 **`Dialogs`**를 씁니다. 기본 창은 앱 디자인과 맞지 않아서 둥근 아이콘·버튼으로 된 창을 따로 만들었습니다.
+  ```java
+  Dialogs.alert(this, Dialogs.Kind.WARNING, "제목", "설명");
+  if (Dialogs.confirm(this, Dialogs.Kind.DANGER, "삭제할까요?", "되돌릴 수 없어요.", "삭제")) { ... }
+  String pw = Dialogs.password(this, Dialogs.Kind.DANGER, "정말 탈퇴할까요?", "비밀번호를 입력하세요.", "탈퇴하기");
+  ```
+  `DANGER`(삭제·탈퇴 등 되돌릴 수 없는 동작)는 확인 버튼이 빨간색입니다. Enter = 확인, Esc = 취소.
+- 버튼은 `FlatButton`(PRIMARY, SECONDARY, GHOST, SOFT, DANGER, DARK)을 씁니다. 기본 `JButton`/`JToggleButton`은 쓰지 않습니다.
+- 팝업 메뉴(계정 메뉴, 우클릭 메뉴) 모양은 `Theme.install()`에서 한 번에 지정합니다.
 
 ## 협업 규칙
 

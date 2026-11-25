@@ -8,13 +8,13 @@ import playtalk.common.MessageType;
 import playtalk.common.Protocol;
 
 import javax.swing.JFrame;
-import javax.swing.JOptionPane;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 
@@ -32,6 +32,8 @@ public class GameController {
     /** 게임이 끝났지만 아직 화면에 열려 있는 창들 (재대결 시작 때 닫기 위해 보관) */
     private final List<GameWindow> endedWindows = new ArrayList<>();
     private IntConsumer statsOpener;
+    /** 초대 결과 등 안내 문구를 보여줄 곳 (기본: 채팅창 시스템 메시지) */
+    private Consumer<String> notifier;
     private final Map<String, InviteDialog> invites = new HashMap<>();
     private final Map<String, WaitingDialog> waiting = new HashMap<>();
     private final LobbyDialog lobbyDialog;
@@ -43,6 +45,7 @@ public class GameController {
         this.connection = connection;
         this.me = me;
         this.chat = chat;
+        this.notifier = chat::appendSystem;
         this.lobbyDialog = new LobbyDialog(frame, connection, me);
 
         connection.on(MessageType.GAME_INVITE, this::onInvite);
@@ -82,6 +85,11 @@ public class GameController {
         lobbyDialog.setVisible(false);
     }
     /** 게임 창의 "전적 보기" 버튼이 호출할 동작 (메인 화면의 전적 창 열기) */
+    /** 방 밖(홈 화면)에 있을 때는 안내 문구를 홈에 띄우도록 바꿀 수 있다 */
+    public void setNotifier(Consumer<String> notifier) {
+        this.notifier = notifier;
+    }
+
     public void setStatsOpener(IntConsumer statsOpener) {
         this.statsOpener = statsOpener;
     }
@@ -126,16 +134,16 @@ public class GameController {
         String target = msg.get("target");
         switch (msg.get("result")) {
             case "PENDING" -> {
-                chat.appendSystem(target + " 님에게 [" + game + "] 대결을 신청했습니다. 응답을 기다리는 중...");
+                notifier.accept(target + " 님에게 [" + game + "] 대결을 신청했습니다. 응답을 기다리는 중...");
                 String inviteId = msg.get("inviteId");
                 WaitingDialog w = new WaitingDialog(frame, target, game, Protocol.INVITE_TIMEOUT_SECONDS,
                         () -> connection.send(Message.of(MessageType.GAME_INVITE_CANCEL).put("inviteId", inviteId)));
                 waiting.put(inviteId, w);
                 w.setVisible(true);
             }
-            case "DECLINED" -> chat.appendSystem(iAmInviter ? target + " 님이 대결을 거절했습니다." : "대결 신청을 거절했습니다.");
-            case "TIMEOUT" -> chat.appendSystem(iAmInviter ? target + " 님이 제한 시간 안에 응답하지 않았습니다." : "응답 시간이 지나 초대가 취소되었습니다.");
-            case "CANCELLED" -> chat.appendSystem("대결 신청이 취소되었습니다.");
+            case "DECLINED" -> notifier.accept(iAmInviter ? target + " 님이 대결을 거절했습니다." : "대결 신청을 거절했습니다.");
+            case "TIMEOUT" -> notifier.accept(iAmInviter ? target + " 님이 제한 시간 안에 응답하지 않았습니다." : "응답 시간이 지나 초대가 취소되었습니다.");
+            case "CANCELLED" -> notifier.accept("대결 신청이 취소되었습니다.");
             default -> {
             }
         }
@@ -158,7 +166,7 @@ public class GameController {
             currentLobbyId = null;
             lobbyDialog.setVisible(false);
         }
-        if (!"STARTED".equals(msg.get("reason"))) chat.appendSystem(msg.get("reason"));
+        if (!"STARTED".equals(msg.get("reason"))) notifier.accept(msg.get("reason"));
     }
 
     // ------------------------------------------------------------------ 게임 진행

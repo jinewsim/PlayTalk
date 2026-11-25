@@ -1,5 +1,6 @@
 package playtalk.client.game;
 
+import playtalk.client.ui.Dialogs;
 import playtalk.client.ui.Theme;
 import playtalk.client.ui.components.FlatButton;
 import playtalk.client.ui.components.RoundedPanel;
@@ -11,7 +12,6 @@ import javax.swing.BorderFactory;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
@@ -188,9 +188,8 @@ public abstract class GameWindow extends JDialog {
 
     private void requestClose() {
         if (!ended) {
-            int answer = JOptionPane.showConfirmDialog(this, "게임을 나가면 패배로 기록됩니다. 나갈까요?",
-                    "기권", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (answer != JOptionPane.YES_OPTION) return;
+            if (!Dialogs.confirm(this, Dialogs.Kind.WARNING, "게임을 나갈까요?",
+                    "지금 나가면 기권으로 패배가 기록돼요.", "나가기")) return;
             session.send(Message.of(MessageType.GAME_LEAVE).put("sessionId", session.sessionId()));
         }
         dispose();

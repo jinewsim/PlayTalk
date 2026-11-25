@@ -18,8 +18,13 @@ public class ClientMain {
         System.setProperty("awt.useSystemAAFontSettings", "on");
         SwingUtilities.invokeLater(() -> {
             Theme.install();
-            new LoginDialog((connection, nickname) -> new MainFrame(connection, nickname).setVisible(true))
-                    .setVisible(true);
+            showLogin();
         });
+    }
+
+    /** 로그인 화면을 띄운다 (프로그램 시작, 로그아웃, 회원 탈퇴 후) */
+    public static void showLogin() {
+        new LoginDialog((connection, nickname) -> new MainFrame(connection, nickname).setVisible(true))
+                .setVisible(true);
     }
 }

@@ -57,6 +57,7 @@ public class PlayTalkServer {
 
         router.on(MessageType.REGISTER, this::handleRegister);
         router.on(MessageType.LOGIN, this::handleLogin);
+        router.on(MessageType.ACCOUNT_DELETE, this::handleAccountDelete);
         router.on(MessageType.STATS_REQUEST, (user, msg) ->
                 user.send(stats.statsMessage(msg.get("nickname", user.nickname()))));
         router.on(MessageType.ROOM_STATS_REQUEST, (user, msg) ->
@@ -130,6 +131,28 @@ public class PlayTalkServer {
         client.send(rooms.roomListMessage());
         broadcastUserList();
         friends.onLogin(client);
+    }
+
+    /**
+     * 회원 탈퇴: 비밀번호를 한 번 더 확인한 뒤 계정, 친구 관계, 전적을 지우고 연결을 끊는다.
+     * 방 퇴장, 게임 기권 처리 등은 연결이 끊길 때 onDisconnect에서 평소처럼 처리된다.
+     */
+    private void handleAccountDelete(ClientHandler client, Message msg) {
+        String nickname = client.nickname();
+        if (client.isInGame()) {
+            // 게임 중에 나가면 패배로 전적이 다시 기록되므로 게임을 끝낸 뒤에만 허용
+            client.send(Message.of(MessageType.ACCOUNT_DELETE_FAIL).put("reason", "게임 중에는 탈퇴할 수 없습니다. 게임을 마친 뒤 다시 시도하세요."));
+            return;
+        }
+        if (!accounts.check(nickname, msg.get("password"))) {
+            client.send(Message.of(MessageType.ACCOUNT_DELETE_FAIL).put("reason", "비밀번호가 올바르지 않습니다."));
+            return;
+        }
+        accounts.delete(nickname);
+        friends.onAccountDeleted(nickname);
+        stats.removeUser(nickname);
+        client.send(Message.of(MessageType.ACCOUNT_DELETED));
+        client.close();
     }
 
     /** ClientHandler 스레드가 끝날 때 호출 (정상 종료, 비정상 끊김 모두) */

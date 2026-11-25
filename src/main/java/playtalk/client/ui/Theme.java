@@ -101,5 +101,21 @@ public final class Theme {
         UIManager.put("ProgressBar.foreground", PRIMARY);
         UIManager.put("ProgressBar.background", SURFACE_HIGH);
         UIManager.put("ProgressBar.border", BorderFactory.createEmptyBorder());
+
+        // 팝업 메뉴 (계정 메뉴, 우클릭 메뉴): 흰 카드 + 연한 테두리, 항목은 여백 있게, 마우스 올리면 연파랑
+        UIManager.put("PopupMenu.background", SURFACE);
+        UIManager.put("PopupMenu.border", BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_SOFT, 1), BorderFactory.createEmptyBorder(6, 0, 6, 0)));
+        UIManager.put("MenuItem.background", SURFACE);
+        UIManager.put("MenuItem.foreground", TEXT);
+        UIManager.put("MenuItem.selectionBackground", SURFACE_MID);
+        UIManager.put("MenuItem.selectionForeground", PRIMARY_DARK);
+        UIManager.put("MenuItem.font", bold(13));
+        UIManager.put("MenuItem.border", BorderFactory.createEmptyBorder(8, 14, 8, 24));
+        UIManager.put("MenuItem.borderPainted", Boolean.FALSE);
+        UIManager.put("PopupMenuSeparator.foreground", BORDER_SOFT);
+        UIManager.put("PopupMenuSeparator.background", SURFACE);
+        UIManager.put("Separator.foreground", BORDER_SOFT);
+        UIManager.put("Separator.background", SURFACE);
     }
 }

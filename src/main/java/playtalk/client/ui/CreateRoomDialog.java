@@ -4,13 +4,11 @@ import playtalk.client.ui.components.FlatButton;
 import playtalk.common.Protocol;
 
 import javax.swing.BorderFactory;
-import javax.swing.ButtonGroup;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
-import javax.swing.JToggleButton;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.FlowLayout;
@@ -41,19 +39,23 @@ public class CreateRoomDialog extends JDialog {
 
         JPanel maxRow = new JPanel(new GridLayout(1, Protocol.ROOM_MAX_USERS - Protocol.ROOM_MIN_USERS + 1, 6, 0));
         maxRow.setOpaque(false);
-        ButtonGroup group = new ButtonGroup();
-        JToggleButton[] options = new JToggleButton[Protocol.ROOM_MAX_USERS + 1];
+        // 인원 선택: 고른 칸만 파랗게 채운 둥근 버튼 (하나만 선택)
+        FlatButton[] options = new FlatButton[Protocol.ROOM_MAX_USERS + 1];
+        int[] selected = {Protocol.ROOM_MAX_USERS};
         for (int n = Protocol.ROOM_MIN_USERS; n <= Protocol.ROOM_MAX_USERS; n++) {
-            JToggleButton b = new JToggleButton(n + "명");
+            int count = n;
+            FlatButton b = new FlatButton(n + "명", FlatButton.Style.SOFT);
             b.setFont(Theme.bold(13));
-            b.setFocusPainted(false);
-            b.setBackground(Theme.SURFACE_LOW);
-            b.addItemListener(e -> b.setForeground(b.isSelected() ? Theme.PRIMARY_DARK : Theme.TEXT_MUTED));
-            group.add(b);
+            b.addActionListener(e -> {
+                selected[0] = count;
+                for (int k = Protocol.ROOM_MIN_USERS; k <= Protocol.ROOM_MAX_USERS; k++) {
+                    options[k].setStyle(k == count ? FlatButton.Style.PRIMARY : FlatButton.Style.SOFT);
+                }
+            });
             maxRow.add(b);
             options[n] = b;
         }
-        options[Protocol.ROOM_MAX_USERS].setSelected(true);
+        options[Protocol.ROOM_MAX_USERS].setStyle(FlatButton.Style.PRIMARY);
 
         JPanel form = new JPanel(new GridLayout(4, 1, 0, 6));
         form.setOpaque(false);
@@ -75,10 +77,7 @@ public class CreateRoomDialog extends JDialog {
                 error.setText("방 제목은 1~" + Protocol.ROOM_TITLE_MAX_LENGTH + "자로 입력하세요.");
                 return;
             }
-            int max = Protocol.ROOM_MAX_USERS;
-            for (int n = Protocol.ROOM_MIN_USERS; n <= Protocol.ROOM_MAX_USERS; n++) {
-                if (options[n].isSelected()) max = n;
-            }
+            int max = selected[0];
             result = new Result(t, max);
             dispose();
         };

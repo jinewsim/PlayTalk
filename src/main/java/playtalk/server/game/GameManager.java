@@ -92,7 +92,9 @@ public class GameManager implements GameContext {
     private String checkCanInvite(ClientHandler from, ClientHandler to) {
         if (to == null) return "접속 중이 아닌 사용자입니다.";
         if (to == from) return "자기 자신에게는 신청할 수 없습니다.";
-        if (from.getRoom() == null || from.getRoom() != to.getRoom()) return "같은 채팅방에 있는 사용자에게만 신청할 수 있습니다.";
+        if (sharedRoom(from, to) == null && !areFriends(from, to)) {
+            return "같은 채팅방에 있는 사용자나 친구에게만 신청할 수 있습니다.";
+        }
         if (from.isInGame()) return "이미 게임 중입니다.";
         if (to.isInGame()) return to.nickname() + " 님은 이미 게임 중입니다.";
         if (hasPendingInvite(from)) return "이미 응답을 기다리는 초대가 있습니다.";
@@ -115,12 +117,23 @@ public class GameManager implements GameContext {
             sendInviteResult(inv, "DECLINED");
             return;
         }
-        if (inv.from().isInGame() || inv.to().isInGame() || inv.from().getRoom() == null) {
+        ChatRoom room = sharedRoom(inv.from(), inv.to());
+        if (inv.from().isInGame() || inv.to().isInGame() || (room == null && !areFriends(inv.from(), inv.to()))) {
             sendInviteResult(inv, "CANCELLED");
             return;
         }
         sendInviteResult(inv, "ACCEPTED");
-        startSession(inv.type(), List.of(inv.from(), inv.to()), inv.from().getRoom());
+        // 같은 방이면 그 방의 게임(방 알림, 방 전적에 기록), 아니면 친구끼리 방 밖에서 하는 게임
+        startSession(inv.type(), List.of(inv.from(), inv.to()), room);
+    }
+
+    /** 두 사람이 같은 채팅방에 있으면 그 방, 아니면 null */
+    private static ChatRoom sharedRoom(ClientHandler a, ClientHandler b) {
+        return a.getRoom() != null && a.getRoom() == b.getRoom() ? a.getRoom() : null;
+    }
+
+    private boolean areFriends(ClientHandler a, ClientHandler b) {
+        return server.friends().areFriends(a.nickname(), b.nickname());
     }
 
     private synchronized void cancelInvite(ClientHandler user, Message msg) {

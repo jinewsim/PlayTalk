@@ -24,6 +24,12 @@ public enum MessageType {
     LOGIN_FAIL,
     /** C→S 정상 종료 알림 */
     LOGOUT,
+    /** C→S password: 회원 탈퇴 (계정, 친구 관계, 전적 삭제) */
+    ACCOUNT_DELETE,
+    /** S→C: 탈퇴 완료. 서버는 이어서 연결을 끊는다 */
+    ACCOUNT_DELETED,
+    /** S→C reason: 탈퇴 실패 (비밀번호 틀림 등) */
+    ACCOUNT_DELETE_FAIL,
     /** S→C users(목록): 전체 접속자 */
     USER_LIST,
 

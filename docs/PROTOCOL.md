@@ -24,6 +24,9 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 | `LOGIN` | C→S | nickname, password | |
 | `LOGIN_OK` | S→C | nickname | 성공. 바로 이어서 `ROOM_LIST`, `USER_LIST`, `FRIEND_LIST` 전송 |
 | `LOGIN_FAIL` | S→C | reason | 가입되지 않은 닉네임, 비밀번호 틀림, 이미 접속 중인 계정 |
+| `ACCOUNT_DELETE` | C→S | password | 회원 탈퇴. 비밀번호를 다시 확인하고 계정·친구 관계·받은/보낸 요청·전적을 삭제. 게임 중에는 불가 |
+| `ACCOUNT_DELETED` | S→C | (없음) | 탈퇴 완료. 서버가 이어서 연결을 끊음 (방 퇴장 등은 평소 접속 종료와 같이 처리) |
+| `ACCOUNT_DELETE_FAIL` | S→C | reason | 비밀번호 틀림, 게임 중 |
 | `LOGOUT` | C→S | | 정상 종료 |
 | `USER_LIST` | S→C | users(목록) | 접속자 변동 시 전체에게 |
 
@@ -57,7 +60,7 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 
 | 타입 | 방향 | key | 설명 |
 |---|---|---|---|
-| `GAME_INVITE` | C→S | target, game | 같은 방, 둘 다 게임/초대/대기실 중이 아니어야 함 |
+| `GAME_INVITE` | C→S | target, game | 같은 방에 있거나 **친구**여야 함 (친구는 채팅방 밖에서도 가능). 둘 다 게임/초대/대기실 중이 아니어야 함 |
 | `GAME_INVITE` | S→C | inviteId, from, game, timeout | 받는 사람에게 |
 | `GAME_INVITE_REPLY` | C→S | inviteId, accept(true/false) | |
 | `GAME_INVITE_RESULT` | S→C | inviteId, from, target, game, result | result: `PENDING`(보낸 사람에게) / `ACCEPTED` / `DECLINED` / `TIMEOUT`(15초) / `CANCELLED` |
@@ -77,7 +80,7 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 
 | 타입 | 방향 | key | 설명 |
 |---|---|---|---|
-| `GAME_START` | S→C | sessionId, game, players(목록), roomId + 게임별 값 | |
+| `GAME_START` | S→C | sessionId, game, players(목록), roomId + 게임별 값 | 친구끼리 방 밖에서 하는 게임은 roomId=-1 |
 | `GAME_ACTION` | C→S | sessionId + 게임별 값 | |
 | `GAME_STATE` | S→C | sessionId, game + 게임별 값 | |
 | `GAME_END` | S→C | sessionId, game, results(표: nickname, `WIN`/`LOSS`/`DRAW`), summary | |

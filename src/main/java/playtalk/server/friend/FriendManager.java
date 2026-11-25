@@ -101,6 +101,15 @@ public class FriendManager {
         sendListTo(me, target);
     }
 
+    /** 회원 탈퇴: 친구 관계·요청을 지우고, 영향을 받은 사람들의 목록을 갱신한다 */
+    public void onAccountDeleted(String nickname) {
+        sendListTo(store.removeUser(nickname).toArray(new String[0]));
+    }
+
+    public boolean areFriends(String a, String b) {
+        return store.areFriends(a, b);
+    }
+
     // ------------------------------------------------------------------ login / logout
 
     /** 로그인 직후: 내 친구 목록을 보내고, 접속 중인 친구들에게 내가 온라인이 되었음을 알린다. */

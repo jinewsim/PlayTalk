@@ -121,6 +121,12 @@ public class StatsStore {
         }
     }
 
+    /** 회원 탈퇴: 그 사용자의 전적을 지운다 (랭킹에서도 사라짐) */
+    public synchronized void removeUser(String nickname) {
+        if (stats.remove(nickname) != null) save();
+        for (Map<String, int[]> room : roomStats.values()) room.remove(nickname);
+    }
+
     private void save() {
         try {
             if (file.getParent() != null) Files.createDirectories(file.getParent());
