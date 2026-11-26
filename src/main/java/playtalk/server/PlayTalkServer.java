@@ -62,6 +62,8 @@ public class PlayTalkServer {
                 user.send(stats.statsMessage(msg.get("nickname", user.nickname()))));
         router.on(MessageType.ROOM_STATS_REQUEST, (user, msg) ->
                 user.send(stats.roomStatsMessage(msg.getInt("roomId", -1))));
+        router.on(MessageType.VERSUS_STATS_REQUEST, (user, msg) ->
+                user.send(stats.versusMessage(user.nickname(), msg.get("opponent", ""))));
         router.on(MessageType.RANKING_REQUEST, (user, msg) -> user.send(stats.rankingMessage()));
         rooms.registerHandlers(router);
         games.registerHandlers(router);
@@ -158,7 +160,7 @@ public class PlayTalkServer {
     /** ClientHandler 스레드가 끝날 때 호출 (정상 종료, 비정상 끊김 모두) */
     void onDisconnect(ClientHandler client) {
         if (!client.isLoggedIn()) return;
-        rooms.leave(client);
+        rooms.leaveAll(client);
         games.onDisconnect(client);
         users.remove(client);
         Log.info("접속 종료: %s", client.nickname());

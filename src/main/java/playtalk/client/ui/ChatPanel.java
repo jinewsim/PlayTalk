@@ -56,11 +56,11 @@ public class ChatPanel extends JPanel {
     /** 0 이상이면 새 줄을 맨 아래가 아니라 이 위치에 끼워 넣는다 (이전 대화를 위쪽에 채울 때) */
     private int insertAt = -1;
 
-    public ChatPanel(String myNickname, Consumer<String> onSend, Runnable onMultiGame, Runnable onLeave) {
+    public ChatPanel(String myNickname, Consumer<String> onSend, Runnable onMultiGame, Runnable onLeave, Runnable onHome) {
         this.myNickname = myNickname;
         setLayout(cards);
         add(buildEmpty(), "empty");
-        add(buildRoom(onSend, onMultiGame, onLeave), "room");
+        add(buildRoom(onSend, onMultiGame, onLeave, onHome), "room");
         cards.show(this, "empty");
     }
 
@@ -87,7 +87,7 @@ public class ChatPanel extends JPanel {
         return p;
     }
 
-    private JComponent buildRoom(Consumer<String> onSend, Runnable onMultiGame, Runnable onLeave) {
+    private JComponent buildRoom(Consumer<String> onSend, Runnable onMultiGame, Runnable onLeave, Runnable onHome) {
         JPanel room = new JPanel(new BorderLayout());
         room.setBackground(Theme.SURFACE);
 
@@ -107,6 +107,12 @@ public class ChatPanel extends JPanel {
         ownerLabel.setForeground(Theme.TEXT_SUBTLE);
         JPanel titleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         titleRow.setOpaque(false);
+        FlatButton home = new FlatButton("", FlatButton.Style.GHOST);
+        home.setIcon(new HomeIcon(20));
+        home.setBorder(Theme.padding(4, 6));
+        home.setToolTipText("홈 화면으로 (이 방에는 그대로 남아 있어요)");
+        home.addActionListener(e -> onHome.run());
+        titleRow.add(home);
         titleRow.add(titleLabel);
         titleRow.add(countBadge);
         titleRow.add(ownerLabel);
@@ -486,6 +492,56 @@ public class ChatPanel extends JPanel {
         @Override
         public boolean getScrollableTracksViewportHeight() {
             return false;
+        }
+    }
+
+    /** 코드로 그린 집 모양 아이콘 (이모지 글꼴에 의존하지 않는다) */
+    private static final class HomeIcon implements javax.swing.Icon {
+        private final int size;
+
+        HomeIcon(int size) {
+            this.size = size;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return size;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return size;
+        }
+
+        @Override
+        public void paintIcon(Component c, java.awt.Graphics g, int x, int y) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.translate(x, y);
+            g2.scale(size / 20.0, size / 20.0);
+            g2.setColor(Theme.PRIMARY_DARK);
+            java.awt.geom.Path2D roof = new java.awt.geom.Path2D.Double(); // 지붕
+            roof.moveTo(10, 2);
+            roof.lineTo(19, 10);
+            roof.lineTo(16.5, 10);
+            roof.lineTo(10, 4.6);
+            roof.lineTo(3.5, 10);
+            roof.lineTo(1, 10);
+            roof.closePath();
+            g2.fill(roof);
+            java.awt.geom.Path2D body = new java.awt.geom.Path2D.Double(); // 몸체 (가운데 문이 비어 있다)
+            body.moveTo(4, 10.5);
+            body.lineTo(10, 5.6);
+            body.lineTo(16, 10.5);
+            body.lineTo(16, 18);
+            body.lineTo(12, 18);
+            body.lineTo(12, 13);
+            body.lineTo(8, 13);
+            body.lineTo(8, 18);
+            body.lineTo(4, 18);
+            body.closePath();
+            g2.fill(body);
+            g2.dispose();
         }
     }
 }

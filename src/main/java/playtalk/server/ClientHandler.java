@@ -26,7 +26,8 @@ public class ClientHandler implements Runnable, Participant {
 
     private volatile String nickname;
     /** 현재 들어가 있는 채팅방 (없으면 null). RoomManager만 변경한다. */
-    private volatile ChatRoom room;
+    /** 참여 중인 채팅방들 (여러 방에 동시에 참여할 수 있다) */
+    private final java.util.Set<ChatRoom> rooms = new java.util.LinkedHashSet<>();
     /** 진행 중인 게임 세션 id (없으면 null). GameManager만 변경한다. */
     private volatile String gameSessionId;
     private volatile boolean closed;
@@ -112,12 +113,29 @@ public class ClientHandler implements Runnable, Participant {
         return nickname != null;
     }
 
-    public ChatRoom getRoom() {
-        return room;
+    /** 참여 중인 방 목록 (입장 순서, 복사본) */
+    public java.util.List<ChatRoom> getRooms() {
+        synchronized (rooms) {
+            return new java.util.ArrayList<>(rooms);
+        }
     }
 
-    public void setRoom(ChatRoom room) {
-        this.room = room;
+    public boolean isIn(ChatRoom room) {
+        synchronized (rooms) {
+            return rooms.contains(room);
+        }
+    }
+
+    public void addRoom(ChatRoom room) {
+        synchronized (rooms) {
+            rooms.add(room);
+        }
+    }
+
+    public void removeRoom(ChatRoom room) {
+        synchronized (rooms) {
+            rooms.remove(room);
+        }
     }
 
     public String getGameSessionId() {

@@ -43,7 +43,7 @@ public class RoomManager {
     public void registerHandlers(MessageRouter router) {
         router.on(MessageType.ROOM_CREATE, this::handleCreate);
         router.on(MessageType.ROOM_JOIN, this::handleJoin);
-        router.on(MessageType.ROOM_LEAVE, (user, msg) -> leave(user));
+        router.on(MessageType.ROOM_LEAVE, this::handleLeave);
         router.on(MessageType.CHAT, this::handleChat);
         router.on(MessageType.CHAT_HISTORY_REQUEST, this::handleHistory);
     }
@@ -66,13 +66,12 @@ public class RoomManager {
             fail(user, "최대 인원은 " + Protocol.ROOM_MIN_USERS + "~" + Protocol.ROOM_MAX_USERS + "명으로 설정하세요.");
             return;
         }
-        leave(user);
         ChatRoom room;
         synchronized (this) {
             room = new ChatRoom(nextId++, title, max, user.nickname());
             rooms.put(room.getId(), room);
             room.add(user);
-            user.setRoom(room);
+            user.addRoom(room);
         }
         Log.info("방 생성 #%d '%s' (최대 %d명, 방장 %s)", room.getId(), title, max, user.nickname());
         afterJoin(user, room);
@@ -83,36 +82,43 @@ public class RoomManager {
         ChatRoom target;
         synchronized (this) {
             target = rooms.get(roomId);
-        }
-        if (target == null) {
-            fail(user, "존재하지 않는 채팅방입니다.");
-            return;
-        }
-        if (target == user.getRoom()) {
-            return;
-        }
-        if (target.isFull()) { // 지금 방을 떠나기 전에 먼저 확인
-            fail(user, "채팅방 인원이 가득 찼습니다. (" + target.size() + "/" + target.getMaxUsers() + ")");
-            return;
-        }
-        leave(user);
-        synchronized (this) {
-            if (!rooms.containsKey(roomId)) {
-                fail(user, "채팅방이 이미 닫혔습니다.");
+            if (target == null) {
+                fail(user, "존재하지 않는 채팅방입니다.");
                 return;
+            }
+            if (user.isIn(target)) {
+                return; // 이미 참여 중 (화면 전환은 클라이언트가 한다)
             }
             if (target.isFull()) {
                 fail(user, "채팅방 인원이 가득 찼습니다. (" + target.size() + "/" + target.getMaxUsers() + ")");
                 return;
             }
             target.add(user);
-            user.setRoom(target);
+            user.addRoom(target);
         }
         afterJoin(user, target);
     }
 
+    /** 메시지의 roomId에 해당하는, 내가 참여 중인 방. roomId가 없고 참여 중인 방이 하나뿐이면 그 방. */
+    private static ChatRoom roomOf(ClientHandler user, Message msg) {
+        List<ChatRoom> mine = user.getRooms();
+        int id = msg.getInt("roomId", -1);
+        for (ChatRoom r : mine) {
+            if (r.getId() == id) return r;
+        }
+        return id < 0 && mine.size() == 1 ? mine.get(0) : null;
+    }
+
+    private void handleLeave(ClientHandler user, Message msg) {
+        if (msg.has("roomId")) {
+            leave(user, roomOf(user, msg));
+        } else {
+            leaveAll(user);
+        }
+    }
+
     private void handleChat(ClientHandler user, Message msg) {
-        ChatRoom room = user.getRoom();
+        ChatRoom room = roomOf(user, msg);
         if (room == null) {
             user.sendError("채팅방에 먼저 입장하세요.");
             return;
@@ -133,8 +139,8 @@ public class RoomManager {
 
     /** 방에 들어온 사람이 요청하면, 들어오기 전까지의 이전 대화를 보내 준다 */
     private void handleHistory(ClientHandler user, Message msg) {
-        ChatRoom room = user.getRoom();
-        if (room == null || room.getId() != msg.getInt("roomId", -1)) return;
+        ChatRoom room = roomOf(user, msg);
+        if (room == null) return;
         List<String[]> rows = new ArrayList<>();
         for (ChatHistory.Entry e : server.chatHistory().recent(room.getId(), msg.getLong("upTo", 0), HISTORY_LIMIT)) {
             rows.add(new String[]{e.from(), e.text(), e.time()});
@@ -153,21 +159,25 @@ public class RoomManager {
                 .put("owner", room.getOwner())
                 .put("history", server.chatHistory().recent(room.getId(), upToNow, HISTORY_LIMIT).size())
                 .put("historyUpTo", upToNow));
-        room.broadcast(Message.of(MessageType.SYSTEM).put("text", user.nickname() + " 님이 입장했습니다."));
+        room.broadcast(Message.of(MessageType.SYSTEM).put("roomId", room.getId()).put("text", user.nickname() + " 님이 입장했습니다."));
         broadcastMembers(room);
         broadcastRoomList();
     }
 
-    /** 현재 방에서 나간다. 방이 비면 삭제하고, 방장이 나가면 다음 사람에게 넘긴다. */
-    public void leave(ClientHandler user) {
-        ChatRoom room;
+    /** 참여 중인 모든 방에서 나간다 (연결 끊김, ROOM_LEAVE에 roomId가 없을 때) */
+    public void leaveAll(ClientHandler user) {
+        for (ChatRoom r : user.getRooms()) leave(user, r);
+    }
+
+    /** 그 방에서 나간다. 방이 비면 삭제하고, 방장이 나가면 다음 사람에게 넘긴다. */
+    public void leave(ClientHandler user, ChatRoom room) {
+        if (room == null) return;
         boolean removedRoom = false;
         String newOwner = null;
         synchronized (this) {
-            room = user.getRoom();
-            if (room == null) return;
+            if (!user.isIn(room)) return;
             room.remove(user);
-            user.setRoom(null);
+            user.removeRoom(room);
             if (room.size() == 0) {
                 rooms.remove(room.getId());
                 removedRoom = true;
@@ -178,9 +188,9 @@ public class RoomManager {
         }
         user.send(Message.of(MessageType.ROOM_LEFT).put("roomId", room.getId()));
         if (!removedRoom) {
-            room.broadcast(Message.of(MessageType.SYSTEM).put("text", user.nickname() + " 님이 퇴장했습니다."));
+            room.broadcast(Message.of(MessageType.SYSTEM).put("roomId", room.getId()).put("text", user.nickname() + " 님이 퇴장했습니다."));
             if (newOwner != null) {
-                room.broadcast(Message.of(MessageType.SYSTEM).put("text", newOwner + " 님이 새 방장이 되었습니다."));
+                room.broadcast(Message.of(MessageType.SYSTEM).put("roomId", room.getId()).put("text", newOwner + " 님이 새 방장이 되었습니다."));
             }
             broadcastMembers(room);
         } else {

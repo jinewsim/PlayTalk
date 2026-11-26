@@ -56,6 +56,12 @@ public class RankingDialog extends JDialog {
                 "이 채팅방에서 한 게임만 모아서 보여줘요. 승률이 높은 순서예요.", 1);
     }
 
+    /** 나와 상대가 서로 한 1:1 게임의 전적 (VERSUS_STATS 메시지) */
+    public static RankingDialog versus(JFrame owner, Message stats, String me) {
+        return new RankingDialog(owner, stats, me, "상대 전적", me + " vs " + stats.get("opponent"),
+                "두 사람이 서로 1:1로 한 게임만 모아서 보여줘요.", 0);
+    }
+
     private RankingDialog(JFrame owner, Message ranking, String me, String windowTitle, String heading,
                           String noteText, int minGames) {
         super(owner, windowTitle, true);

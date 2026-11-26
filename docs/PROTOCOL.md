@@ -36,8 +36,8 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 |---|---|---|---|
 | `ROOM_LIST` | S→C | rooms(표: id, title, current, max, owner) | 방 변동 시 전체에게 |
 | `ROOM_CREATE` | C→S | title, max(2~5) | 만든 사람은 자동 입장 + 방장 |
-| `ROOM_JOIN` | C→S | roomId | 다른 방에 있으면 자동으로 나간 뒤 입장 |
-| `ROOM_LEAVE` | C→S | | |
+| `ROOM_JOIN` | C→S | roomId | 해당 채팅방에 참여. 기존 참여 채팅방은 유지 |
+| `ROOM_LEAVE` | C→S | roomId(선택) | roomId가 있으면 해당 방만 퇴장, 생략하면 참여 중인 모든 방에서 퇴장 |
 | `ROOM_JOINED` | S→C | roomId, title, max, owner, history, historyUpTo | |
 | `ROOM_LEFT` | S→C | roomId | |
 | `ROOM_MEMBERS` | S→C | roomId, owner, members(표: nickname, status `IDLE`/`IN_GAME`) | 방 인원/상태 변동 시 방 전체에게 |
@@ -47,9 +47,9 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 
 | 타입 | 방향 | key | 설명 |
 |---|---|---|---|
-| `CHAT` | C→S | text | 이모티콘은 `:이름:` 코드로 본문에 포함 |
-| `CHAT` | S→C | roomId, from, text, time | 같은 방 사람에게만 |
-| `CHAT_HISTORY_REQUEST` | C→S | roomId, upTo | |
+| `CHAT` | C→S | roomId, text | 메시지를 보낼 채팅방 지정 |
+| `CHAT` | S→C | roomId, from, text, time | 해당 채팅방 참여자에게만 전달 |
+| `CHAT_HISTORY_REQUEST` | C→S | roomId, upTo | 해당 채팅방의 이전 대화 요청 |
 | `CHAT_HISTORY` | S→C | roomId, messages(표: from, text, time) | |
 | `SYSTEM` | S→C | text | 입장/퇴장, 게임 시작/결과 안내 |
 | `ERROR` | S→C | text | 요청 거부 사유 |
@@ -70,7 +70,7 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 
 | 타입 | 방향 | key | 설명 |
 |---|---|---|---|
-| `LOBBY_OPEN` | C→S | game | 내 채팅방에 대기실 열기 (방당 1개), 연 사람이 호스트 |
+| `LOBBY_OPEN` | C→S | game, roomId | 지정한 채팅방에 대기실 열기 (방당 1개), 연 사람이 호스트 |
 | `LOBBY_JOIN` / `LOBBY_LEAVE` | C→S | lobbyId | 호스트가 나가면 대기실이 닫힘 |
 | `LOBBY_START` | C→S | lobbyId | 호스트만, 최소 인원 이상일 때 |
 | `LOBBY_STATE` | S→C | lobbyId, roomId, game, host, min, max, players(목록) | 방 전체에게 |
@@ -129,3 +129,5 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 | `ROOM_STATS` | S→C | roomId, users(표: nickname, win, loss, draw) |
 | `RANKING_REQUEST` | C→S | (없음) |
 | `RANKING` | S→C | users(표: nickname, win, loss, draw) |
+| `VERSUS_STATS_REQUEST` | C→S | opponent | 특정 상대와의 1:1 전적 요청 |
+| `VERSUS_STATS` | S→C | opponent, users(표: nickname, win, loss, draw) | 해당 상대와의 1:1 전적 반환 |

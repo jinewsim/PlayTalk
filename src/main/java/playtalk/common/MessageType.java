@@ -113,6 +113,11 @@ public enum MessageType {
     /** S→C roomId, users(표: nickname, win, loss, draw) — 그 채팅방에서 한 게임의 전적만 (서버를 끄면 초기화) */
     ROOM_STATS,
 
+    /** C→S opponent */
+    VERSUS_STATS_REQUEST,
+    /** S→C opponent, users(표: nickname, win, loss, draw) — 나와 그 사람이 서로 한 1:1 게임만 (서버를 끄면 초기화) */
+    VERSUS_STATS,
+
     // ---------------------------------------------------------- 친구
     /** C→S target: 친구 요청 보내기 / S→C from: 친구 요청을 받음 (실시간 알림) */
     FRIEND_REQUEST,

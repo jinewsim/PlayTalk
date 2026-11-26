@@ -178,7 +178,8 @@ public abstract class GameWindow extends JDialog {
             }
         } else {
             // 다인용: 같은 게임의 대기실을 다시 연다
-            session.send(Message.of(MessageType.LOBBY_OPEN).put("game", session.type().name()));
+            session.send(Message.of(MessageType.LOBBY_OPEN)
+                    .put("game", session.type().name()).put("roomId", session.roomId()));
             setStatus("[" + session.type().displayName() + "] 대기실 열기를 요청했습니다...");
         }
     }

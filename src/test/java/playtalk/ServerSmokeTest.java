@@ -122,6 +122,23 @@ public class ServerSmokeTest {
     // forfeit
     b.send(Message.of(MessageType.ROOM_LEAVE)); b.await(MessageType.ROOM_LEFT);
 
+    // 여러 채팅방에 동시에 참여
+    a.send(Message.of(MessageType.ROOM_CREATE).put("title","방A").put("max",3)); int ida=a.await(MessageType.ROOM_JOINED).getInt("roomId",-1);
+    a.send(Message.of(MessageType.ROOM_CREATE).put("title","방B").put("max",3)); int idb=a.await(MessageType.ROOM_JOINED).getInt("roomId",-1);
+    check(ida>0 && idb>0 && ida!=idb,"can create a second room while still in the first");
+    b.send(Message.of(MessageType.ROOM_JOIN).put("roomId",ida)); b.await(MessageType.ROOM_JOINED);
+    b.send(Message.of(MessageType.ROOM_JOIN).put("roomId",idb)); b.await(MessageType.ROOM_JOINED);
+    a.send(Message.of(MessageType.CHAT).put("roomId",ida).put("text","A방 대화"));
+    a.send(Message.of(MessageType.CHAT).put("roomId",idb).put("text","B방 대화"));
+    Message ma=b.await(MessageType.CHAT, m->m.get("text").equals("A방 대화")); Message mb=b.await(MessageType.CHAT, m->m.get("text").equals("B방 대화"));
+    check(ma.getInt("roomId",-1)==ida && mb.getInt("roomId",-1)==idb,"chat is delivered with the right roomId in each room");
+    a.send(Message.of(MessageType.ROOM_LEAVE).put("roomId",ida));
+    check(b.await(MessageType.ROOM_MEMBERS, m->m.getInt("roomId",-1)==ida && m.getTable("members").size()==1)!=null,"leaving one room keeps the other");
+    a.send(Message.of(MessageType.CHAT).put("roomId",idb).put("text","아직 B방"));
+    check(b.await(MessageType.CHAT, m->m.get("text").equals("아직 B방"))!=null,"still chatting in the second room");
+    a.send(Message.of(MessageType.ROOM_LEAVE)); b.send(Message.of(MessageType.ROOM_LEAVE)); // roomId 없이 보내면 모든 방에서 나감
+    check(b.await(MessageType.ROOM_LEFT, m->m.getInt("roomId",-1)==idb)!=null,"ROOM_LEAVE without roomId leaves all rooms");
+
     // 친구
     a.send(Message.of(MessageType.FRIEND_REQUEST).put("target","민수"));
     check(!a.await(MessageType.FRIEND_NOTICE).getBoolean("error"),"friend request sent");
