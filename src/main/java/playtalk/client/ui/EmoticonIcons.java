@@ -31,4 +31,34 @@ public final class EmoticonIcons {
         CACHE.put(key, icon);
         return icon;
     }
+
+    private static final Map<String, javax.swing.Icon> INLINE = new HashMap<>();
+
+    /**
+     * 글자 사이에 넣을 작은 이모티콘. 글자 기준선에 바닥을 맞추면 떠 보여서 조금 아래로 내려 그린다.
+     * @return 아이콘, 이미지 파일이 없으면 null
+     */
+    public static synchronized javax.swing.Icon inline(String name, int size) {
+        String key = name + "@" + size;
+        if (INLINE.containsKey(key)) return INLINE.get(key);
+        ImageIcon base = get(name, size);
+        javax.swing.Icon icon = base == null ? null : new javax.swing.Icon() {
+            @Override
+            public void paintIcon(java.awt.Component c, java.awt.Graphics g, int x, int y) {
+                base.paintIcon(c, g, x, y + size / 5);
+            }
+
+            @Override
+            public int getIconWidth() {
+                return size;
+            }
+
+            @Override
+            public int getIconHeight() {
+                return size;
+            }
+        };
+        INLINE.put(key, icon);
+        return icon;
+    }
 }

@@ -9,6 +9,7 @@ import playtalk.server.friend.FriendStore;
 import playtalk.server.game.GameManager;
 import playtalk.server.game.GameRegistry;
 import playtalk.server.room.RoomManager;
+import playtalk.server.room.RoomStore;
 import playtalk.server.room.ChatHistory;
 import playtalk.server.stats.StatsStore;
 
@@ -52,7 +53,7 @@ public class PlayTalkServer {
         this.chatHistory = new ChatHistory(dataDir.resolve("chat"));
         this.accounts = new AccountStore(dataDir.resolve("accounts.csv"));
         this.friends = new FriendManager(this, new FriendStore(dataDir.resolve("friends.csv")));
-        this.rooms = new RoomManager(this);
+        this.rooms = new RoomManager(this, new RoomStore(dataDir.resolve("rooms.tsv")));
         this.games = new GameManager(this, new GameRegistry(), scheduler);
 
         router.on(MessageType.REGISTER, this::handleRegister);

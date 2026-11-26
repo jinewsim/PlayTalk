@@ -276,7 +276,8 @@ public class GameManager implements GameContext {
         if (lobbies.get(lobby.room.getId()) != lobby) return;
         lobbies.remove(lobby.room.getId());
         if (lobby.expiry != null) lobby.expiry.cancel();
-        Message closed = Message.of(MessageType.LOBBY_CLOSED).put("lobbyId", lobby.id).put("reason", reason);
+        Message closed = Message.of(MessageType.LOBBY_CLOSED).put("lobbyId", lobby.id)
+                .put("roomId", lobby.room.getId()).put("reason", reason);
         Set<ClientHandler> targets = new LinkedHashSet<>(lobby.room.members());
         targets.addAll(lobby.players);
         if (alsoNotify != null) targets.add(alsoNotify);
@@ -408,6 +409,12 @@ public class GameManager implements GameContext {
     }
 
     // =================================================================== 퇴장 / 연결 끊김
+
+    /** 방에 새로 들어온 사람에게 그 방에 열려 있는 대기실 상태를 보내 준다 */
+    public synchronized void sendLobbyState(ClientHandler user, ChatRoom room) {
+        Lobby lobby = lobbies.get(room.getId());
+        if (lobby != null) user.send(lobby.stateMessage());
+    }
 
     /** RoomManager 퇴장 리스너: 대기실에서도 빼 준다. 진행 중인 게임은 그대로 계속한다. */
     public synchronized void onRoomLeave(ClientHandler user, ChatRoom room) {

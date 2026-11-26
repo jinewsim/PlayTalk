@@ -9,6 +9,7 @@ import playtalk.common.MessageType;
 
 import javax.swing.BorderFactory;
 import javax.swing.JFrame;
+import javax.swing.Box;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
@@ -63,6 +64,14 @@ public class MainFrame extends JFrame {
             this.chat = chat;
         }
     }
+    /** 이 폭보다 좁으면 채팅방 목록을 자동으로 접는다 */
+    private static final int NARROW_WIDTH = 1100;
+    private boolean wasNarrow;
+    /** 이 폭보다 좁으면 오른쪽 참여자·친구 패널도 자동으로 접는다 */
+    private static final int VERY_NARROW_WIDTH = 900;
+    private boolean wasVeryNarrow;
+    private JLabel subtitle;
+
     private boolean waitingStatsDialog;
     private boolean waitingRanking;
     /** 탈퇴 완료로 서버가 연결을 끊는 중 (연결 끊김 알림을 띄우지 않기 위해) */
@@ -107,8 +116,25 @@ public class MainFrame extends JFrame {
                 System.exit(0);
             }
         });
-        setMinimumSize(new Dimension(960, 600));
+        setMinimumSize(new Dimension(760, 560));
         setSize(1200, 760);
+        // 창이 좁아지면 채팅방 목록을 자동으로 접고, 넓어지면 다시 편다 (버튼으로 언제든 바꿀 수 있다)
+        addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                boolean narrow = getWidth() < NARROW_WIDTH;
+                if (narrow != wasNarrow) {
+                    wasNarrow = narrow;
+                    setRoomListVisible(!narrow);
+                }
+                boolean veryNarrow = getWidth() < VERY_NARROW_WIDTH;
+                if (veryNarrow != wasVeryNarrow) {
+                    wasVeryNarrow = veryNarrow;
+                    setMemberPanelVisible(!veryNarrow);
+                }
+                subtitle.setVisible(getWidth() >= 900);
+            }
+        });
         setLocationRelativeTo(null);
 
         connection.send(Message.of(MessageType.STATS_REQUEST));
@@ -129,8 +155,17 @@ public class MainFrame extends JFrame {
         JLabel sub = new JLabel("  실시간 채팅 & 미니게임");
         sub.setFont(Theme.font(12));
         sub.setForeground(Theme.TITLE_MUTED);
+        // 왼쪽 채팅방 목록 접기/펴기
+        FlatButton menu = new FlatButton("", FlatButton.Style.DARK);
+        menu.setIcon(new MenuIcon(18));
+        menu.setBorder(Theme.padding(5, 8));
+        menu.setToolTipText("채팅방 목록 접기/펴기");
+        menu.addActionListener(e -> setRoomListVisible(!roomList.isVisible()));
+        subtitle = sub;
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         left.setOpaque(false);
+        left.add(menu);
+        left.add(Box.createHorizontalStrut(10));
         left.add(logo);
         left.add(sub);
 
@@ -161,6 +196,13 @@ public class MainFrame extends JFrame {
         right.add(ranking);
         right.add(stats);
         right.add(account);
+        // 오른쪽 참여자·친구 패널 접기/펴기
+        FlatButton people = new FlatButton("", FlatButton.Style.DARK);
+        people.setIcon(new PanelIcon(18));
+        people.setBorder(Theme.padding(5, 8));
+        people.setToolTipText("참여자·친구 패널 접기/펴기");
+        people.addActionListener(e -> setMemberPanelVisible(!members.isVisible()));
+        right.add(people);
 
         bar.add(left, BorderLayout.WEST);
         bar.add(right, BorderLayout.EAST);
@@ -182,13 +224,16 @@ public class MainFrame extends JFrame {
                 showRoom(roomId);
                 return;
             }
+            games.forgetRoom(roomId); // 이 방의 대기실 상태는 서버가 새로 보내 준다
             int max = msg.getInt("max", 5);
             ChatPanel chat = new ChatPanel(nickname, text -> sendChat(roomId, text),
                     () -> games().openMultiGame(roomId), () -> leaveRoom(roomId), this::showHome);
             chat.showRoom(msg.get("title"), max, msg.get("owner"));
+            chat.setOnDelete(() -> deleteRoom(roomId));
             joined.put(roomId, new RoomView(roomId, max, chat));
             center.add(chat, "room" + roomId);
 
+            chat.setLastSeq(msg.getLong("historyUpTo", 0)); // 들어온 시점까지는 읽은 것으로 친다
             int history = msg.getInt("history", 0);
             if (history > 0) {
                 long upTo = msg.getLong("historyUpTo", 0);
@@ -200,6 +245,7 @@ public class MainFrame extends JFrame {
         connection.on(MessageType.ROOM_LEFT, msg -> {
             RoomView view = joined.remove(msg.getInt("roomId", -1));
             if (view == null) return;
+            games.forgetRoom(view.id);
             center.remove(view.chat);
             if (view.id == viewedRoomId) showHome();
             else refreshRoomBadges();
@@ -210,6 +256,9 @@ public class MainFrame extends JFrame {
             view.members = msg;
             view.chat.setMemberCount(msg.getTable("members").size(), view.max);
             view.chat.setOwner(msg.get("owner"));
+            java.util.List<String> names = new java.util.ArrayList<>();
+            for (String[] r : msg.getTable("members")) names.add(r[0]);
+            view.chat.setRoomMembers(names);
             if (view.id == viewedRoomId) members.setMembers(msg, view.max);
         });
         connection.on(MessageType.ROOM_FAIL, msg ->
@@ -218,13 +267,19 @@ public class MainFrame extends JFrame {
         connection.on(MessageType.CHAT, msg -> {
             RoomView view = joined.get(msg.getInt("roomId", -1));
             if (view == null) return;
-            view.chat.appendChat(msg.get("from"), msg.get("text"), msg.get("time"));
-            if (view.id != viewedRoomId) { // 보고 있지 않은 방의 새 채팅은 방 목록에 개수로 표시
+            view.chat.appendChat(msg.get("from"), msg.get("text"), msg.get("time"), msg.getLong("seq", 0));
+            if (view.id == viewedRoomId) {
+                if (!msg.get("from").equals(nickname)) sendRead(view);
+            } else { // 보고 있지 않은 방의 새 채팅은 방 목록에 개수로 표시
                 view.unread++;
                 refreshRoomBadges();
             }
         });
 
+        connection.on(MessageType.CHAT_READ, msg -> {
+            RoomView view = joined.get(msg.getInt("roomId", -1));
+            if (view != null) view.chat.setReads(msg.getTable("reads"));
+        });
         connection.on(MessageType.CHAT_HISTORY, msg -> {
             RoomView view = joined.get(msg.getInt("roomId", -1));
             if (view != null) view.chat.showHistory(msg.getTable("messages"));
@@ -298,6 +353,11 @@ public class MainFrame extends JFrame {
             showRoom(roomId);
             return;
         }
+        // 아직 참여하지 않은 방이면 들어가기 전에 한 번 물어본다
+        RoomListPanel.RoomItem room = roomList.find(roomId);
+        String heading = room != null ? "'" + room.title() + "' 채팅방에 입장할까요?" : "채팅방에 입장할까요?";
+        String detail = room != null ? "현재 " + room.current() + "/" + room.max() + "명 · 방장 " + room.owner() : "";
+        if (!Dialogs.confirm(this, Dialogs.Kind.QUESTION, heading, detail, "입장")) return;
         connection.send(Message.of(MessageType.ROOM_JOIN).put("roomId", roomId));
     }
 
@@ -313,6 +373,90 @@ public class MainFrame extends JFrame {
         if (view.members != null) members.setMembers(view.members, view.max);
         else members.clearMembers();
         games.onRoomChanged(roomId);
+        sendRead(view); // 방을 열면 거기까지 읽은 것
+    }
+
+    /** 이 방의 마지막 메시지까지 읽었다고 서버에 알린다 (읽음 표시) */
+    private void sendRead(RoomView view) {
+        long seq = view.chat.getLastSeq();
+        if (seq > 0) connection.send(Message.of(MessageType.CHAT_READ).put("roomId", view.id).put("seq", seq));
+    }
+
+    private void setRoomListVisible(boolean visible) {
+        roomList.setVisible(visible);
+        getContentPane().revalidate();
+        getContentPane().repaint();
+    }
+
+    private void setMemberPanelVisible(boolean visible) {
+        members.setVisible(visible);
+        getContentPane().revalidate();
+        getContentPane().repaint();
+    }
+
+    /** 코드로 그린 오른쪽 패널 아이콘 (네모 안 오른쪽 칸) */
+    private static final class PanelIcon implements javax.swing.Icon {
+        private final int size;
+
+        PanelIcon(int size) {
+            this.size = size;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return size;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return size;
+        }
+
+        @Override
+        public void paintIcon(java.awt.Component c, java.awt.Graphics g, int x, int y) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(Theme.TITLE_TEXT);
+            g2.setStroke(new java.awt.BasicStroke(Math.max(1.6f, size / 10f)));
+            int pad = size / 8;
+            int w = size - pad * 2, h = size - pad * 3;
+            g2.drawRoundRect(x + pad, y + pad + pad / 2, w, h, 4, 4);
+            int split = x + pad + w * 6 / 10;
+            g2.fillRect(split, y + pad + pad / 2, x + pad + w - split, h);
+            g2.dispose();
+        }
+    }
+
+    /** 코드로 그린 메뉴(햄버거) 아이콘 */
+    private static final class MenuIcon implements javax.swing.Icon {
+        private final int size;
+
+        MenuIcon(int size) {
+            this.size = size;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return size;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return size;
+        }
+
+        @Override
+        public void paintIcon(java.awt.Component c, java.awt.Graphics g, int x, int y) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(Theme.TITLE_TEXT);
+            int h = Math.max(2, size / 9);
+            for (int i = 0; i < 3; i++) {
+                int yy = y + size / 5 + i * (size * 3 / 10);
+                g2.fillRoundRect(x + 1, yy, size - 2, h, h, h);
+            }
+            g2.dispose();
+        }
     }
 
     /** 방에서 나가지 않고 홈 화면으로 돌아간다 (참여 중인 방은 그대로 남는다) */
@@ -349,6 +493,15 @@ public class MainFrame extends JFrame {
 
     private void removeFriend(String target) {
         connection.send(Message.of(MessageType.FRIEND_REMOVE).put("target", target));
+    }
+
+    /** 방장이 빈 채팅방을 삭제 (확인 후) */
+    private void deleteRoom(int roomId) {
+        RoomListPanel.RoomItem room = roomList.find(roomId);
+        String name = room != null ? "'" + room.title() + "' 채팅방" : "이 채팅방";
+        if (!Dialogs.confirm(this, Dialogs.Kind.DANGER, name + "을 삭제할까요?",
+                "채팅방 목록에서 사라지고, 대화 기록도 다시 볼 수 없어요. 되돌릴 수 없어요.", "삭제")) return;
+        connection.send(Message.of(MessageType.ROOM_DELETE).put("roomId", roomId));
     }
 
     private void leaveRoom(int roomId) {

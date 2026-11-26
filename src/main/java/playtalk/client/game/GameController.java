@@ -39,7 +39,9 @@ public class GameController {
     private final Map<String, InviteDialog> invites = new HashMap<>();
     private final Map<String, WaitingDialog> waiting = new HashMap<>();
     private final LobbyDialog lobbyDialog;
-    /** 지금 내 방에 열려 있는 대기실 id (없으면 null) */
+    /** 참여 중인 방마다 마지막으로 받은 대기실 상태 (방을 오가도 대기실 정보를 잃지 않도록) */
+    private final Map<Integer, Message> lobbyByRoom = new HashMap<>();
+    /** 지금 보고 있는 방에 열려 있는 대기실 id (없으면 null) */
     private String currentLobbyId;
 
     public GameController(JFrame frame, ServerConnection connection, String me) {
@@ -85,6 +87,17 @@ public class GameController {
         this.viewedRoomId = viewedRoomId;
         currentLobbyId = null;
         lobbyDialog.setVisible(false);
+        Message lobby = lobbyByRoom.get(viewedRoomId);
+        if (lobby == null) return;
+        // 돌아온 방에 대기실이 열려 있으면 정보를 되살린다. 내가 참가한 대기실이면 창도 다시 띄운다
+        currentLobbyId = lobby.get("lobbyId");
+        lobbyDialog.update(lobby);
+        if (lobby.getList("players").contains(me)) lobbyDialog.setVisible(true);
+    }
+
+    /** 방에서 나갔거나 새로 들어갈 때, 그 방의 예전 대기실 정보를 지운다 */
+    public void forgetRoom(int roomId) {
+        lobbyByRoom.remove(roomId);
     }
     /** 게임 창의 "전적 보기" 버튼이 호출할 동작 (메인 화면의 전적 창 열기) */
     /** 방 밖(홈 화면)에 있을 때는 안내 문구를 홈에 띄우도록 바꿀 수 있다 */
@@ -158,8 +171,10 @@ public class GameController {
     // ------------------------------------------------------------------ 대기실
 
     private void onLobbyState(Message msg) {
+        int roomId = msg.getInt("roomId", -1);
+        lobbyByRoom.put(roomId, msg);
+        if (roomId != viewedRoomId) return; // 다른 방의 대기실은 기억해 두었다가 그 방을 열 때 보여준다
         boolean firstTime = !msg.get("lobbyId").equals(currentLobbyId);
-        if (firstTime && msg.getInt("roomId", -1) != viewedRoomId) return; // 다른 방의 대기실은 그 방을 열었을 때 안내(채팅)만 보인다
         currentLobbyId = msg.get("lobbyId");
         lobbyDialog.update(msg);
         boolean joined = msg.getList("players").contains(me);
@@ -169,6 +184,10 @@ public class GameController {
     }
 
     private void onLobbyClosed(Message msg) {
+        int roomId = msg.getInt("roomId", -1);
+        Message cached = lobbyByRoom.get(roomId);
+        if (cached != null && cached.get("lobbyId").equals(msg.get("lobbyId"))) lobbyByRoom.remove(roomId);
+        if (roomId >= 0 && roomId != viewedRoomId) return; // 보고 있지 않은 방의 대기실 안내는 띄우지 않는다
         if (msg.get("lobbyId").equals(currentLobbyId)) {
             currentLobbyId = null;
             lobbyDialog.setVisible(false);

@@ -46,6 +46,8 @@ public enum MessageType {
     ROOM_JOINED,
     /** S→C roomId: 내가 방에서 나감 */
     ROOM_LEFT,
+    /** C→S roomId: 방장이 빈 채팅방(나 말고 아무도 없는 방)을 삭제 */
+    ROOM_DELETE,
     /** S→C roomId, owner, members(표: nickname, status) */
     ROOM_MEMBERS,
     /** S→C reason: 방 생성/입장 실패 */
@@ -58,6 +60,8 @@ public enum MessageType {
     CHAT_HISTORY_REQUEST,
     /** S→C roomId, messages(표: from, text, time): 오래된 것부터 */
     CHAT_HISTORY,
+    /** C→S roomId, seq: 이 번호까지 읽었음 / S→C roomId, reads(표: nickname, seq): 방 사람들이 어디까지 읽었는지 */
+    CHAT_READ,
     /** S→C text: 입장/퇴장 등 시스템 안내 */
     SYSTEM,
 

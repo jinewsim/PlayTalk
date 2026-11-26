@@ -1,5 +1,7 @@
 package playtalk.server.room;
 
+import playtalk.common.MessageType;
+
 import playtalk.common.Message;
 import playtalk.server.ClientHandler;
 
@@ -19,6 +21,8 @@ public class ChatRoom {
     private final int maxUsers;
     private final Set<ClientHandler> members = new LinkedHashSet<>();
     private volatile String owner;
+    /** 닉네임 → 어디까지 읽었는지 (채팅 seq). 방에 있는 사람만 보관한다 */
+    private final java.util.Map<String, Long> readSeq = new java.util.LinkedHashMap<>();
 
     ChatRoom(int id, String title, int maxUsers, String owner) {
         this.id = id;
@@ -52,7 +56,25 @@ public class ChatRoom {
     }
 
     synchronized boolean remove(ClientHandler user) {
+        readSeq.remove(user.nickname());
         return members.remove(user);
+    }
+
+    /** 읽은 위치를 앞으로만 옮긴다. 바뀌었으면 true */
+    synchronized boolean markRead(String nickname, long seq) {
+        Long old = readSeq.get(nickname);
+        if (old != null && old >= seq) return false;
+        readSeq.put(nickname, seq);
+        return true;
+    }
+
+    /** CHAT_READ 메시지: 방 사람들이 각자 어디까지 읽었는지 */
+    public synchronized Message readMessage() {
+        List<String[]> rows = new ArrayList<>();
+        for (ClientHandler m : members) {
+            rows.add(new String[]{m.nickname(), String.valueOf(readSeq.getOrDefault(m.nickname(), 0L))});
+        }
+        return Message.of(MessageType.CHAT_READ).put("roomId", id).putTable("reads", rows);
     }
 
     public synchronized int size() {
