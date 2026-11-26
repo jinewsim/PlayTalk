@@ -39,9 +39,12 @@ public class RoomListPanel extends JPanel {
     /** 내가 참여 중인 방 id와, 보고 있지 않은 방의 안 읽은 채팅 수 */
     private java.util.Set<Integer> joinedRooms = java.util.Set.of();
     private java.util.Map<Integer, Integer> unread = java.util.Map.of();
+    private final String me;
+    private IntConsumer onDelete = id -> { };
 
     public RoomListPanel(String nickname, IntConsumer onJoin, Runnable onCreate, Runnable onStats) {
         super(new BorderLayout());
+        this.me = nickname;
         setBackground(Theme.SURFACE_LOW);
         setPreferredSize(new Dimension(250, 0));
         setBorder(BorderFactory.createCompoundBorder(
@@ -94,10 +97,30 @@ public class RoomListPanel extends JPanel {
         list.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
+                if (javax.swing.SwingUtilities.isRightMouseButton(e)) return;
                 int idx = list.locationToIndex(e.getPoint());
                 if (idx >= 0 && list.getCellBounds(idx, idx).contains(e.getPoint())) {
                     onJoin.accept(model.get(idx).id());
                 }
+            }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (!e.isPopupTrigger() && !javax.swing.SwingUtilities.isRightMouseButton(e)) return;
+                int idx = list.locationToIndex(e.getPoint());
+                if (idx < 0 || !list.getCellBounds(idx, idx).contains(e.getPoint())) return;
+                RoomItem room = model.get(idx);
+                if (!room.owner().equals(me)) return; // 방장인 방에서만 메뉴를 띄운다
+                javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
+                javax.swing.JMenuItem delete = new javax.swing.JMenuItem("채팅방 삭제");
+                if (canDelete(room)) {
+                    delete.addActionListener(ev -> onDelete.accept(room.id()));
+                } else {
+                    delete.setEnabled(false);
+                    delete.setToolTipText("다른 사람이 있는 방은 삭제할 수 없어요");
+                }
+                menu.add(delete);
+                menu.show(list, e.getX(), e.getY());
             }
         });
         JScrollPane scroll = new JScrollPane(list);
@@ -132,6 +155,25 @@ public class RoomListPanel extends JPanel {
         list.repaint();
     }
 
+    /** 방장이 방 삭제를 고르면 호출 (roomId) */
+    public void setOnDelete(IntConsumer onDelete) {
+        this.onDelete = onDelete;
+    }
+
+    /** 내가 방장이고, 방에 아무도 없거나 나 혼자 있으면 삭제할 수 있다 */
+    private boolean canDelete(RoomItem room) {
+        return room.owner().equals(me)
+                && (room.current() == 0 || (room.current() == 1 && joinedRooms.contains(room.id())));
+    }
+
+    /** 방 목록에서 id로 방 정보를 찾는다 (없으면 null) */
+    public RoomItem find(int roomId) {
+        for (int i = 0; i < model.size(); i++) {
+            if (model.get(i).id() == roomId) return model.get(i);
+        }
+        return null;
+    }
+
     public void setCurrentRoom(int roomId) {
         this.currentRoomId = roomId;
         list.repaint();
@@ -159,19 +201,23 @@ public class RoomListPanel extends JPanel {
             cell.setBorder(Theme.padding(6, 10));
             name.setFont(Theme.font(13));
             count.setFont(Theme.bold(11));
-            // 방 이름, 배지, 인원 숫자를 글자 기준선(baseline)에 맞춰 한 줄에 놓는다
+            // [방 이름 ........ (배지) 인원] 을 세로 가운데에 맞춰 한 줄에 놓는다
             cell.setLayout(new java.awt.GridBagLayout());
             java.awt.GridBagConstraints gc = new java.awt.GridBagConstraints();
             gc.gridx = 0;
             gc.weightx = 1;
             gc.fill = java.awt.GridBagConstraints.HORIZONTAL;
-            gc.anchor = java.awt.GridBagConstraints.BASELINE_LEADING;
+            gc.anchor = java.awt.GridBagConstraints.LINE_START;
             cell.add(name, gc);
             gc = new java.awt.GridBagConstraints();
             gc.gridx = 1;
             gc.insets = new java.awt.Insets(0, 6, 0, 0);
-            gc.anchor = java.awt.GridBagConstraints.BASELINE_TRAILING;
+            gc.anchor = java.awt.GridBagConstraints.CENTER;
             cell.add(badge, gc);
+            gc = new java.awt.GridBagConstraints();
+            gc.gridx = 2;
+            gc.insets = new java.awt.Insets(0, 6, 0, 0);
+            gc.anchor = java.awt.GridBagConstraints.LINE_END;
             cell.add(count, gc);
         }
 
@@ -181,14 +227,12 @@ public class RoomListPanel extends JPanel {
             boolean current = room.id() == currentRoomId;
             boolean joined = joinedRooms.contains(room.id());
             int news = unread.getOrDefault(room.id(), 0);
-            name.setText((joined ? "● " : "# ") + room.title());
+            name.setText("# " + room.title());
             name.setFont(current || joined ? Theme.bold(13) : Theme.font(13));
             name.setForeground(current ? Theme.PRIMARY_DARK : joined ? Theme.TEXT : Theme.TEXT_MUTED);
-            badge.setVisible(news > 0);
-            count.setVisible(news == 0);
-            if (news > 0) {
-                badge.setNumber(news);
-            } else if (room.isFull() && !joined) {
+            badge.setVisible(news > 0); // 안 읽은 메시지가 있으면 인원 숫자 앞에 작은 배지
+            if (news > 0) badge.setNumber(news);
+            if (room.isFull() && !joined) {
                 count.setText("FULL");
                 count.setForeground(Theme.ERROR);
             } else {
@@ -204,17 +248,17 @@ public class RoomListPanel extends JPanel {
     /** 안 읽은 채팅 수 배지 (카카오톡처럼 작은 빨간 알약 + 흰 숫자) */
     private static final class Badge extends JLabel {
         private static final java.awt.Color RED = new java.awt.Color(0xF4503F);
-        private static final int HEIGHT = 18;
+        private static final int HEIGHT = 16;
         private String text = "";
 
         Badge() {
-            setFont(Theme.bold(11));
+            setFont(Theme.bold(10));
             setNumber(1);
         }
 
         void setNumber(int n) {
             text = n > 99 ? "99+" : String.valueOf(n);
-            int width = text.length() == 1 ? HEIGHT : text.length() == 2 ? 24 : 30;
+            int width = text.length() == 1 ? HEIGHT : text.length() == 2 ? 22 : 28;
             setPreferredSize(new Dimension(width, HEIGHT));
         }
 

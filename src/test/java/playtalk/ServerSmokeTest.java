@@ -107,7 +107,8 @@ public class ServerSmokeTest {
     check(a.await(MessageType.LOBBY_CLOSED).get("reason").equals("STARTED"),"lobby closed on start");
     Message tgs=a.await(MessageType.GAME_START); sid=tgs.get("sessionId"); check(tgs.getList("players").size()==3,"timing has 3 players");
     a.await(MessageType.GAME_STATE, m->m.get("event").equals("RUNNING"));
-    Thread.sleep(9800); a.send(Message.of(MessageType.GAME_ACTION).put("sessionId",sid).put("action","STOP"));
+    long tgt=tgs.getLong("target",5000); // 목표 시간 (서버 설정을 따른다)
+    Thread.sleep(tgt-200); a.send(Message.of(MessageType.GAME_ACTION).put("sessionId",sid).put("action","STOP"));
     Thread.sleep(800); b.send(Message.of(MessageType.GAME_ACTION).put("sessionId",sid).put("action","STOP"));
     c.s.close(); // C disconnects mid-game
     final String tsid=sid; Message rev=a.await(MessageType.GAME_STATE, m->m.get("sessionId").equals(tsid)&&m.get("event").equals("REVEAL"));
@@ -138,6 +139,17 @@ public class ServerSmokeTest {
     check(b.await(MessageType.CHAT, m->m.get("text").equals("아직 B방"))!=null,"still chatting in the second room");
     a.send(Message.of(MessageType.ROOM_LEAVE)); b.send(Message.of(MessageType.ROOM_LEAVE)); // roomId 없이 보내면 모든 방에서 나감
     check(b.await(MessageType.ROOM_LEFT, m->m.getInt("roomId",-1)==idb)!=null,"ROOM_LEAVE without roomId leaves all rooms");
+
+    // 읽음 표시
+    a.send(Message.of(MessageType.ROOM_CREATE).put("title","읽음방").put("max",3)); int rr=a.await(MessageType.ROOM_JOINED).getInt("roomId",-1);
+    b.send(Message.of(MessageType.ROOM_JOIN).put("roomId",rr)); b.await(MessageType.ROOM_JOINED);
+    a.send(Message.of(MessageType.CHAT).put("roomId",rr).put("text","읽었어?"));
+    Message rc=b.await(MessageType.CHAT, m->m.get("text").equals("읽었어?")); long rseq=rc.getLong("seq",0);
+    check(rseq>0,"chat carries seq");
+    b.send(Message.of(MessageType.CHAT_READ).put("roomId",rr).put("seq",rseq));
+    Message rd=a.await(MessageType.CHAT_READ, m->m.getInt("roomId",-1)==rr && m.getTable("reads").stream().anyMatch(r->r[0].equals("민수") && Long.parseLong(r[1])>=rseq));
+    check(rd!=null,"read receipt broadcast to sender");
+    a.send(Message.of(MessageType.ROOM_LEAVE)); b.send(Message.of(MessageType.ROOM_LEAVE)); b.await(MessageType.ROOM_LEFT, m->m.getInt("roomId",-1)==rr);
 
     // 친구
     a.send(Message.of(MessageType.FRIEND_REQUEST).put("target","민수"));
@@ -175,6 +187,23 @@ public class ServerSmokeTest {
     PlayTalkServer srv2=new PlayTalkServer(19091,data); new Thread(()->{try{srv2.start();}catch(Exception ex){}}).start(); Thread.sleep(500);
     C a2=new C("A2",19091); a2.login("Alex");
     check(a2.await(MessageType.FRIEND_LIST, m->m.getTable("friends").stream().anyMatch(r->r[0].equals("Dana")&&r[1].equals("false")))!=null,"account and friends persist after restart");
+    Message rl2=a2.await(MessageType.ROOM_LIST, m->m.getTable("rooms").stream().anyMatch(r->r[1].equals("읽음방") && r[2].equals("0")));
+    check(rl2!=null,"rooms persist after restart (empty)");
+    int rr2=Integer.parseInt(rl2.getTable("rooms").stream().filter(r->r[1].equals("읽음방")).findFirst().get()[0]);
+    a2.send(Message.of(MessageType.ROOM_JOIN).put("roomId",rr2)); Message jj=a2.await(MessageType.ROOM_JOINED, m->m.getInt("roomId",-1)==rr2);
+    check(jj.getInt("history",0)>=1,"chat history reloaded after restart");
+    a2.send(Message.of(MessageType.CHAT_HISTORY_REQUEST).put("roomId",rr2).put("upTo",jj.getLong("historyUpTo",0)));
+    check(a2.await(MessageType.CHAT_HISTORY, m->m.getTable("messages").stream().anyMatch(r->r[1].equals("읽었어?")))!=null,"old messages readable after restart");
+    a2.send(Message.of(MessageType.ROOM_LEAVE).put("roomId",rr2)); a2.await(MessageType.ROOM_LEFT);
+    // 방장이 빈 방 삭제
+    C x2=new C("X2",19091); x2.join("Xavi");
+    x2.send(Message.of(MessageType.ROOM_DELETE).put("roomId",rr2)); check(x2.await(MessageType.ERROR).get("text").contains("방장만"),"non-owner cannot delete room");
+    x2.send(Message.of(MessageType.ROOM_JOIN).put("roomId",rr2)); x2.await(MessageType.ROOM_JOINED);
+    a2.send(Message.of(MessageType.ROOM_DELETE).put("roomId",rr2)); check(a2.await(MessageType.ERROR).get("text").contains("다른 사람"),"cannot delete room with others");
+    x2.send(Message.of(MessageType.ROOM_LEAVE).put("roomId",rr2)); x2.await(MessageType.ROOM_LEFT);
+    a2.send(Message.of(MessageType.ROOM_DELETE).put("roomId",rr2));
+    check(a2.await(MessageType.ROOM_LIST, m->m.getTable("rooms").stream().noneMatch(r->r[0].equals(String.valueOf(rr2))))!=null,"owner deletes empty room");
+    check(!Files.readString(data.resolve("rooms.tsv")).contains("읽음방"),"deleted room removed from file");
     // 친구에게는 채팅방 없이 1:1 대결 신청
     C d2=new C("D2",19091); d2.login("Dana"); C e2=new C("E2",19091); e2.login("지은");
     a2.send(Message.of(MessageType.GAME_INVITE).put("target","지은").put("game","TIC_TAC_TOE"));

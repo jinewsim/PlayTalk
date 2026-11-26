@@ -40,6 +40,7 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 | `ROOM_LEAVE` | C→S | roomId(선택) | roomId가 있으면 해당 방만 퇴장, 생략하면 참여 중인 모든 방에서 퇴장 |
 | `ROOM_JOINED` | S→C | roomId, title, max, owner, history, historyUpTo | |
 | `ROOM_LEFT` | S→C | roomId | |
+| `ROOM_DELETE` | C→S | roomId | 방장만, 방에 다른 사람이 없을 때 삭제. 채팅방은 data/rooms.tsv에 저장되어 서버를 다시 켜도 남는다 |
 | `ROOM_MEMBERS` | S→C | roomId, owner, members(표: nickname, status `IDLE`/`IN_GAME`) | 방 인원/상태 변동 시 방 전체에게 |
 | `ROOM_FAIL` | S→C | reason | 인원 초과 등 |
 
@@ -48,9 +49,11 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 | 타입 | 방향 | key | 설명 |
 |---|---|---|---|
 | `CHAT` | C→S | roomId, text | 메시지를 보낼 채팅방 지정 |
-| `CHAT` | S→C | roomId, from, text, time | 해당 채팅방 참여자에게만 전달 |
+| `CHAT` | S→C | roomId, seq, from, text, time | 해당 채팅방 참여자에게만 전달. seq는 방마다 1부터 늘어나는 번호 |
 | `CHAT_HISTORY_REQUEST` | C→S | roomId, upTo | 해당 채팅방의 이전 대화 요청 |
 | `CHAT_HISTORY` | S→C | roomId, messages(표: from, text, time) | |
+| `CHAT_READ` | C→S | roomId, seq | 이 번호까지 읽음 (방을 열 때, 보고 있는 방에 새 메시지가 올 때) |
+| `CHAT_READ` | S→C | roomId, reads(표: nickname, seq) | 방 사람들이 각자 어디까지 읽었는지. 입장 시와 변동 시 방 전체에게 |
 | `SYSTEM` | S→C | text | 입장/퇴장, 게임 시작/결과 안내 |
 | `ERROR` | S→C | text | 요청 거부 사유 |
 
@@ -74,7 +77,7 @@ C→S: 클라이언트 → 서버, S→C: 서버 → 클라이언트
 | `LOBBY_JOIN` / `LOBBY_LEAVE` | C→S | lobbyId | 호스트가 나가면 대기실이 닫힘 |
 | `LOBBY_START` | C→S | lobbyId | 호스트만, 최소 인원 이상일 때 |
 | `LOBBY_STATE` | S→C | lobbyId, roomId, game, host, min, max, players(목록) | 방 전체에게 |
-| `LOBBY_CLOSED` | S→C | lobbyId, reason | `STARTED` 또는 닫힌 이유 |
+| `LOBBY_CLOSED` | S→C | lobbyId, roomId, reason | `STARTED` 또는 닫힌 이유 |
 
 ## 게임 진행 (모든 게임 공통)
 

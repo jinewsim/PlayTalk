@@ -17,7 +17,6 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
 import javax.swing.JTextPane;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
@@ -30,6 +29,7 @@ import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridBagLayout;
@@ -46,11 +46,25 @@ public class ChatPanel extends JPanel {
     private final JLabel titleLabel = new JLabel();
     private final JLabel countBadge = new JLabel();
     private final JLabel ownerLabel = new JLabel();
+    /** 방장이고 나 혼자 남았을 때만 보이는 삭제 버튼 */
+    private final FlatButton deleteButton = new FlatButton("방 삭제", FlatButton.Style.GHOST);
+    private Runnable onDelete = () -> { };
+    private String owner = "";
+    private int memberCount;
     private final MessageList messages = new MessageList();
     private final JScrollPane scroll = new JScrollPane(messages);
-    private final JTextArea input = new JTextArea(2, 20);
+    private final EmoticonInput input = new EmoticonInput(2);
     private final String myNickname;
     private String lastSender;
+    /** 읽음 표시용: 마지막 채팅 번호, 그게 내 메시지인지, 방 사람들, 각자 읽은 위치 */
+    private long lastSeq;
+    private boolean lastChatMine;
+    private java.util.List<String> roomMembers = java.util.List.of();
+    private java.util.Map<String, Long> reads = new java.util.HashMap<>();
+    private JComponent receiptRow;
+    /** 마지막 채팅 메시지 줄 (읽음 표시는 항상 이 줄 바로 아래에 붙는다) */
+    private JComponent lastChatRow;
+    private JComponent lastAddedRow;
     /** 이전 대화 불러오기 안내 줄 (없으면 null) */
     private JComponent historyBanner;
     /** 0 이상이면 새 줄을 맨 아래가 아니라 이 위치에 끼워 넣는다 (이전 대화를 위쪽에 채울 때) */
@@ -105,17 +119,30 @@ public class ChatPanel extends JPanel {
         countBadge.setBorder(Theme.padding(2, 8));
         ownerLabel.setFont(Theme.font(12));
         ownerLabel.setForeground(Theme.TEXT_SUBTLE);
-        JPanel titleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        // 창이 좁아지면 방 제목이 "..."으로 줄어들고, 버튼과 겹치지 않는다
+        JPanel titleRow = new JPanel();
+        titleRow.setLayout(new BoxLayout(titleRow, BoxLayout.X_AXIS));
         titleRow.setOpaque(false);
+        titleLabel.setMinimumSize(new Dimension(24, 0));
+        ownerLabel.setMinimumSize(new Dimension(0, 0));
         FlatButton home = new FlatButton("", FlatButton.Style.GHOST);
         home.setIcon(new HomeIcon(20));
         home.setBorder(Theme.padding(4, 6));
         home.setToolTipText("홈 화면으로 (이 방에는 그대로 남아 있어요)");
         home.addActionListener(e -> onHome.run());
-        titleRow.add(home);
         titleRow.add(titleLabel);
+        titleRow.add(Box.createHorizontalStrut(8));
         titleRow.add(countBadge);
+        titleRow.add(Box.createHorizontalStrut(8));
         titleRow.add(ownerLabel);
+        titleRow.add(Box.createHorizontalGlue());
+        for (Component c : titleRow.getComponents()) {
+            if (c instanceof JComponent jc) jc.setAlignmentY(Component.CENTER_ALIGNMENT);
+        }
+        JPanel homeWrap = new JPanel(new BorderLayout());
+        homeWrap.setOpaque(false);
+        homeWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 6));
+        homeWrap.add(home, BorderLayout.CENTER);
 
         FlatButton multi = new FlatButton("다인용 게임");
         multi.addActionListener(e -> onMultiGame.run());
@@ -123,19 +150,37 @@ public class ChatPanel extends JPanel {
         leave.addActionListener(e -> onLeave.run());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         actions.setOpaque(false);
+        deleteButton.setForeground(Theme.ERROR);
+        deleteButton.setToolTipText("아무도 없는 방을 목록에서 지워요");
+        deleteButton.setVisible(false);
+        deleteButton.addActionListener(e -> onDelete.run());
         actions.add(multi);
+        actions.add(deleteButton);
         actions.add(leave);
-        header.add(titleRow, BorderLayout.WEST);
+        header.add(homeWrap, BorderLayout.WEST);
+        header.add(titleRow, BorderLayout.CENTER);
         header.add(actions, BorderLayout.EAST);
 
         // ---- messages
         scroll.setBorder(null);
+        // 창 폭이 바뀌면 말풍선·안내 문구의 줄바꿈 폭을 다시 계산한다
+        scroll.getViewport().addComponentListener(new java.awt.event.ComponentAdapter() {
+            private int lastWidth = -1;
+
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                int w = scroll.getViewport().getWidth();
+                if (w == lastWidth) return;
+                lastWidth = w;
+                invalidateTree(messages);
+                messages.revalidate();
+                messages.repaint();
+            }
+        });
         scroll.getViewport().setBackground(Theme.SURFACE);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
 
         // ---- input
-        input.setLineWrap(true);
-        input.setWrapStyleWord(true);
         input.setFont(Theme.font(14));
         input.setForeground(Theme.TEXT);
         input.setOpaque(false);
@@ -147,7 +192,7 @@ public class ChatPanel extends JPanel {
                     e.consume();
                     submit(onSend);
                 } else if (e.getKeyCode() == KeyEvent.VK_ENTER) {
-                    input.insert("\n", input.getCaretPosition());
+                    input.replaceSelection("\n");
                     e.consume();
                 }
             }
@@ -192,7 +237,7 @@ public class ChatPanel extends JPanel {
     }
 
     private void submit(Consumer<String> onSend) {
-        String text = input.getText().strip();
+        String text = input.getMessageText().strip();
         if (text.isEmpty()) return;
         if (text.length() > Protocol.CHAT_MAX_LENGTH) {
             appendError("메시지는 " + Protocol.CHAT_MAX_LENGTH + "자까지 보낼 수 있습니다.");
@@ -214,7 +259,7 @@ public class ChatPanel extends JPanel {
             b.setToolTipText(Emoticons.code(name));
             b.setBorder(Theme.padding(4, 4));
             b.addActionListener(e -> {
-                input.insert(Emoticons.code(name), input.getCaretPosition());
+                input.insertEmoticon(name);
                 popup.setVisible(false);
                 input.requestFocus();
             });
@@ -228,6 +273,8 @@ public class ChatPanel extends JPanel {
 
     public void showRoom(String title, int max, String owner) {
         messages.removeAll();
+        receiptRow = null;
+        lastChatRow = null;
         lastSender = null;
         historyBanner = null;
         insertAt = -1;
@@ -316,10 +363,22 @@ public class ChatPanel extends JPanel {
 
     public void setMemberCount(int current, int max) {
         countBadge.setText(current + "/" + max + "명");
+        memberCount = current;
+        updateDeleteButton();
     }
 
     public void setOwner(String owner) {
         ownerLabel.setText("방장 " + owner);
+        this.owner = owner == null ? "" : owner;
+        updateDeleteButton();
+    }
+
+    public void setOnDelete(Runnable onDelete) {
+        this.onDelete = onDelete;
+    }
+
+    private void updateDeleteButton() {
+        deleteButton.setVisible(owner.equals(myNickname) && memberCount <= 1);
     }
 
     public void appendChat(String from, String text, String time) {
@@ -362,9 +421,16 @@ public class ChatPanel extends JPanel {
             body.add(head, BorderLayout.NORTH);
         }
 
-        RoundedPanel bubble = new RoundedPanel(new BorderLayout(), mine ? Theme.PRIMARY_SOFT : Theme.SURFACE_LOW, 10);
-        bubble.setBorder(Theme.padding(6, 10));
-        bubble.add(richText(text), BorderLayout.CENTER);
+        // 이모티콘만 보낸 메시지는 말풍선 없이 이미지만 크게 보여준다
+        JComponent bubble;
+        if (isOnlyEmoticons(text)) {
+            bubble = richText(text);
+        } else {
+            RoundedPanel box = new RoundedPanel(new BorderLayout(), mine ? Theme.PRIMARY_SOFT : Theme.SURFACE_LOW, 10);
+            box.setBorder(Theme.padding(6, 10));
+            box.add(richText(text), BorderLayout.CENTER);
+            bubble = box;
+        }
         JPanel bubbleWrap = new JPanel(new BorderLayout());
         bubbleWrap.setOpaque(false);
         bubbleWrap.add(bubble, mine ? BorderLayout.EAST : BorderLayout.WEST);
@@ -372,6 +438,87 @@ public class ChatPanel extends JPanel {
         row.add(body, BorderLayout.CENTER);
 
         addRow(row);
+    }
+
+    /** 서버에서 받은 실시간 채팅 (seq 포함). 읽음 표시를 갱신한다 */
+    public void appendChat(String from, String text, String time, long seq) {
+        appendChat(from, text, time);
+        if (seq > lastSeq) {
+            lastSeq = seq;
+            lastChatMine = from.equals(myNickname);
+            lastChatRow = lastAddedRow;
+        }
+        refreshReceipt();
+    }
+
+    /** 방에 들어올 때까지의 마지막 채팅 번호 (들어오면 거기까지 읽은 것으로 친다) */
+    public void setLastSeq(long seq) {
+        if (seq > lastSeq) lastSeq = seq;
+    }
+
+    public long getLastSeq() {
+        return lastSeq;
+    }
+
+    /** ROOM_MEMBERS 수신 시: 지금 방에 있는 사람들 */
+    public void setRoomMembers(java.util.List<String> names) {
+        roomMembers = java.util.List.copyOf(names);
+        refreshReceipt();
+    }
+
+    /** CHAT_READ 수신 시: 각자 어디까지 읽었는지 */
+    public void setReads(java.util.List<String[]> rows) {
+        java.util.Map<String, Long> m = new java.util.HashMap<>();
+        for (String[] r : rows) {
+            try {
+                m.put(r[0], Long.parseLong(r[1]));
+            } catch (RuntimeException ignored) {
+            }
+        }
+        reads = m;
+        refreshReceipt();
+    }
+
+    /** 인스타 DM처럼, 내가 보낸 마지막 메시지 아래에 누가 읽었는지 보여준다 */
+    private void refreshReceipt() {
+        if (receiptRow != null) {
+            messages.remove(receiptRow);
+            receiptRow = null;
+        }
+        String text = receiptText();
+        if (text != null) {
+            JLabel label = new JLabel(text);
+            label.setFont(Theme.font(11));
+            label.setForeground(Theme.TEXT_SUBTLE);
+            JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+            row.setOpaque(false);
+            row.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 20));
+            row.add(label);
+            row.setAlignmentX(Component.LEFT_ALIGNMENT);
+            receiptRow = row;
+            int index = lastChatRow == null ? -1 : messages.getComponentZOrder(lastChatRow);
+            if (index >= 0) messages.add(row, index + 1); // 메시지 바로 밑
+            else messages.add(row);
+        }
+        messages.revalidate();
+        messages.repaint();
+    }
+
+    private String receiptText() {
+        if (!lastChatMine || lastSeq <= 0) return null;
+        java.util.List<String> others = new java.util.ArrayList<>();
+        java.util.List<String> readers = new java.util.ArrayList<>();
+        for (String n : roomMembers) {
+            if (n.equals(myNickname)) continue;
+            others.add(n);
+            if (reads.getOrDefault(n, 0L) >= lastSeq) readers.add(n);
+        }
+        if (readers.isEmpty()) return null;
+        if (others.size() >= 2 && readers.size() == others.size()) return "모두 읽음";
+        if (readers.size() == 1) return readers.get(0) + "님이 읽음";
+        if (readers.size() == 2) return readers.get(0) + "님과 " + readers.get(1) + "님이 읽음";
+        return String.join("님, ", readers.subList(0, readers.size() - 1)) + "님과 "
+                + readers.get(readers.size() - 1) + "님이 읽음";
     }
 
     public void appendSystem(String text) {
@@ -384,9 +531,7 @@ public class ChatPanel extends JPanel {
 
     private void appendNotice(String text, Color fg, Color bg) {
         lastSender = null;
-        JLabel label = new JLabel(text);
-        label.setFont(Theme.font(12));
-        label.setForeground(fg);
+        JTextPane label = noticeText(text, fg);
         RoundedPanel pill = new RoundedPanel(new BorderLayout(), bg, 12);
         pill.setBorder(Theme.padding(4, 12));
         pill.add(label);
@@ -399,6 +544,7 @@ public class ChatPanel extends JPanel {
 
     private void addRow(JComponent row) {
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lastAddedRow = row;
         if (insertAt >= 0) { // 이전 대화를 위쪽에 채우는 중: 아래로 스크롤하지 않는다
             messages.add(row, insertAt++);
             messages.revalidate();
@@ -415,6 +561,52 @@ public class ChatPanel extends JPanel {
     }
 
     /** 텍스트와 이모티콘 코드를 입력 순서대로 한 덩어리로 표시 */
+    private static void invalidateTree(Container c) {
+        c.invalidate();
+        for (Component k : c.getComponents()) {
+            if (k instanceof Container cc) invalidateTree(cc);
+            else k.invalidate();
+        }
+    }
+
+    /** 안내 문구: 창이 좁으면 여러 줄로 감싸서 가운데 정렬로 보여준다 */
+    private JTextPane noticeText(String text, Color fg) {
+        JTextPane pane = new JTextPane() {
+            @Override
+            public Dimension getPreferredSize() {
+                int max = Math.max(120, scroll.getViewport().getWidth() - 100);
+                setSize(max, Short.MAX_VALUE); // 이 폭으로 줄바꿈해 본 뒤
+                Dimension d = super.getPreferredSize();
+                int natural = getFontMetrics(Theme.font(12)).stringWidth(text) + 4;
+                d.width = Math.min(max, natural); // 한 줄에 들어가면 글자 폭만큼만
+                return d;
+            }
+        };
+        pane.setEditable(false);
+        pane.setFocusable(false);
+        pane.setOpaque(false);
+        pane.setBorder(null);
+        StyledDocument doc = pane.getStyledDocument();
+        SimpleAttributeSet a = new SimpleAttributeSet();
+        StyleConstants.setFontFamily(a, Theme.font(12).getFamily());
+        StyleConstants.setFontSize(a, 12);
+        StyleConstants.setForeground(a, fg);
+        StyleConstants.setAlignment(a, StyleConstants.ALIGN_CENTER);
+        try {
+            doc.insertString(0, text, a);
+        } catch (BadLocationException ignored) {
+        }
+        doc.setParagraphAttributes(0, doc.getLength(), a, false);
+        return pane;
+    }
+
+    /** 글자 없이 이모티콘만 있는 메시지인지 */
+    private static boolean isOnlyEmoticons(String text) {
+        java.util.List<Emoticons.Part> parts = Emoticons.split(text);
+        return parts.stream().anyMatch(Emoticons.Part::isEmoticon)
+                && parts.stream().allMatch(p -> p.isEmoticon() || p.text().isBlank());
+    }
+
     private JTextPane richText(String text) {
         JTextPane pane = new JTextPane() {
             @Override
@@ -440,11 +632,13 @@ public class ChatPanel extends JPanel {
         StyleConstants.setFontFamily(textStyle, Theme.font(14).getFamily());
         StyleConstants.setFontSize(textStyle, 14);
         StyleConstants.setForeground(textStyle, Theme.TEXT);
-        boolean onlyEmoticons = Emoticons.split(text).stream().allMatch(p -> p.isEmoticon() || p.text().isBlank());
+        boolean onlyEmoticons = isOnlyEmoticons(text);
         try {
             for (Emoticons.Part part : Emoticons.split(text)) {
                 if (part.isEmoticon()) {
-                    Icon icon = EmoticonIcons.get(part.emoticon(), onlyEmoticons ? 56 : 24);
+                    // 이모티콘만 있으면 크게, 글자와 섞이면 글자 크기에 맞게 작게
+                    Icon icon = onlyEmoticons ? EmoticonIcons.get(part.emoticon(), 56)
+                            : EmoticonIcons.inline(part.emoticon(), EmoticonInput.ICON_SIZE);
                     if (icon != null) {
                         SimpleAttributeSet iconStyle = new SimpleAttributeSet();
                         StyleConstants.setIcon(iconStyle, icon);
