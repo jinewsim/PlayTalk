@@ -36,6 +36,9 @@ public class RoomListPanel extends JPanel {
     private final JLabel countLabel = new JLabel();
     private final JLabel statsLabel = new JLabel("전적 불러오는 중...");
     private int currentRoomId = -1;
+    /** 내가 참여 중인 방 id와, 보고 있지 않은 방의 안 읽은 채팅 수 */
+    private java.util.Set<Integer> joinedRooms = java.util.Set.of();
+    private java.util.Map<Integer, Integer> unread = java.util.Map.of();
 
     public RoomListPanel(String nickname, IntConsumer onJoin, Runnable onCreate, Runnable onStats) {
         super(new BorderLayout());
@@ -134,6 +137,13 @@ public class RoomListPanel extends JPanel {
         list.repaint();
     }
 
+    /** 참여 중인 방과 안 읽은 채팅 수를 표시한다 */
+    public void setJoined(java.util.Set<Integer> joined, java.util.Map<Integer, Integer> unread) {
+        this.joinedRooms = java.util.Set.copyOf(joined);
+        this.unread = java.util.Map.copyOf(unread);
+        list.repaint();
+    }
+
     /** STATS 수신 */
     public void setStats(int win, int loss, int draw) {
         statsLabel.setText("전적 " + win + "승 " + loss + "패 " + draw + "무  ›");
@@ -143,23 +153,42 @@ public class RoomListPanel extends JPanel {
         private final RoundedPanel cell = new RoundedPanel(new BorderLayout(6, 0), Theme.SURFACE_HIGH, 8);
         private final JLabel name = new JLabel();
         private final JLabel count = new JLabel();
+        private final Badge badge = new Badge();
 
         RoomRenderer() {
             cell.setBorder(Theme.padding(6, 10));
             name.setFont(Theme.font(13));
             count.setFont(Theme.bold(11));
-            cell.add(name, BorderLayout.CENTER);
-            cell.add(count, BorderLayout.EAST);
+            // 방 이름, 배지, 인원 숫자를 글자 기준선(baseline)에 맞춰 한 줄에 놓는다
+            cell.setLayout(new java.awt.GridBagLayout());
+            java.awt.GridBagConstraints gc = new java.awt.GridBagConstraints();
+            gc.gridx = 0;
+            gc.weightx = 1;
+            gc.fill = java.awt.GridBagConstraints.HORIZONTAL;
+            gc.anchor = java.awt.GridBagConstraints.BASELINE_LEADING;
+            cell.add(name, gc);
+            gc = new java.awt.GridBagConstraints();
+            gc.gridx = 1;
+            gc.insets = new java.awt.Insets(0, 6, 0, 0);
+            gc.anchor = java.awt.GridBagConstraints.BASELINE_TRAILING;
+            cell.add(badge, gc);
+            cell.add(count, gc);
         }
 
         @Override
         public Component getListCellRendererComponent(JList<? extends RoomItem> l, RoomItem room, int index,
                                                       boolean selected, boolean focus) {
             boolean current = room.id() == currentRoomId;
-            name.setText("# " + room.title());
-            name.setFont(current ? Theme.bold(13) : Theme.font(13));
-            name.setForeground(current ? Theme.PRIMARY_DARK : Theme.TEXT_MUTED);
-            if (room.isFull() && !current) {
+            boolean joined = joinedRooms.contains(room.id());
+            int news = unread.getOrDefault(room.id(), 0);
+            name.setText((joined ? "● " : "# ") + room.title());
+            name.setFont(current || joined ? Theme.bold(13) : Theme.font(13));
+            name.setForeground(current ? Theme.PRIMARY_DARK : joined ? Theme.TEXT : Theme.TEXT_MUTED);
+            badge.setVisible(news > 0);
+            count.setVisible(news == 0);
+            if (news > 0) {
+                badge.setNumber(news);
+            } else if (room.isFull() && !joined) {
                 count.setText("FULL");
                 count.setForeground(Theme.ERROR);
             } else {
@@ -169,6 +198,51 @@ public class RoomListPanel extends JPanel {
             cell.setBackground(current ? Theme.SURFACE_HIGH : Theme.SURFACE_LOW);
             cell.setToolTipText("방장: " + room.owner());
             return cell;
+        }
+    }
+
+    /** 안 읽은 채팅 수 배지 (카카오톡처럼 작은 빨간 알약 + 흰 숫자) */
+    private static final class Badge extends JLabel {
+        private static final java.awt.Color RED = new java.awt.Color(0xF4503F);
+        private static final int HEIGHT = 18;
+        private String text = "";
+
+        Badge() {
+            setFont(Theme.bold(11));
+            setNumber(1);
+        }
+
+        void setNumber(int n) {
+            text = n > 99 ? "99+" : String.valueOf(n);
+            int width = text.length() == 1 ? HEIGHT : text.length() == 2 ? 24 : 30;
+            setPreferredSize(new Dimension(width, HEIGHT));
+        }
+
+        /** 숫자 글자의 기준선 위치 (방 이름 글자와 같은 높이에 맞추는 데 쓴다) */
+        @Override
+        public int getBaseline(int width, int height) {
+            java.awt.FontMetrics fm = getFontMetrics(getFont());
+            return (height - fm.getHeight()) / 2 + fm.getAscent();
+        }
+
+        @Override
+        public java.awt.Component.BaselineResizeBehavior getBaselineResizeBehavior() {
+            return java.awt.Component.BaselineResizeBehavior.CONSTANT_ASCENT;
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING, java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g2.setColor(RED);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), getHeight(), getHeight());
+            g2.setColor(java.awt.Color.WHITE);
+            g2.setFont(getFont());
+            java.awt.FontMetrics fm = g2.getFontMetrics();
+            g2.drawString(text, (getWidth() - fm.stringWidth(text)) / 2,
+                    (getHeight() - fm.getHeight()) / 2 + fm.getAscent());
+            g2.dispose();
         }
     }
 }

@@ -9,7 +9,7 @@ import java.util.List;
 
 /** 게임 창이 알아야 할 정보와 서버로 입력을 보내는 기능. */
 public record GameSessionInfo(String sessionId, GameType type, String myNickname,
-                              List<String> players, ServerConnection connection) {
+                              List<String> players, ServerConnection connection, int roomId) {
 
     /** GAME_ACTION 메시지 생성 (sessionId 포함) */
     public Message action() {

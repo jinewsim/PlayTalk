@@ -37,6 +37,8 @@ public class StatsStore {
     private final Map<String, Map<GameType, int[]>> stats = new HashMap<>();
     /** roomId → 닉네임 → [승, 패, 무]. 채팅방별 전적은 서버가 켜져 있는 동안만 보관한다. */
     private final Map<Integer, Map<String, int[]>> roomStats = new HashMap<>();
+    /** 두 사람 키 → 닉네임 → [승, 패, 무]. 1:1 게임의 상대 전적, 서버가 켜져 있는 동안만 보관한다. */
+    private final Map<String, Map<String, int[]>> pairStats = new HashMap<>();
 
     public StatsStore(Path file) {
         this.file = file;
@@ -44,10 +46,16 @@ public class StatsStore {
     }
 
     public synchronized void record(GameType type, GameResult result, int roomId) {
+        if (type.isOneOnOne() && result.outcomes().size() == 2) {
+            String[] names = result.outcomes().keySet().toArray(new String[0]);
+            Map<String, int[]> pair = pairStats.computeIfAbsent(pairKey(names[0], names[1]), k -> new LinkedHashMap<>());
+            result.outcomes().forEach((nick, outcome) -> pair.computeIfAbsent(nick, k -> new int[3])[outcomeIndex(outcome)]++);
+        }
         result.outcomes().forEach((nick, outcome) -> {
-            int[] roomRow = roomStats.computeIfAbsent(roomId, k -> new LinkedHashMap<>())
-                    .computeIfAbsent(nick, k -> new int[3]);
-            roomRow[outcomeIndex(outcome)]++;
+            if (!type.isOneOnOne()) { // 채팅방 전적은 다인용 게임만
+                roomStats.computeIfAbsent(roomId, k -> new LinkedHashMap<>())
+                        .computeIfAbsent(nick, k -> new int[3])[outcomeIndex(outcome)]++;
+            }
             int[] row = stats.computeIfAbsent(nick, k -> new EnumMap<>(GameType.class))
                     .computeIfAbsent(type, k -> new int[3]);
             row[outcomeIndex(outcome)]++;
@@ -61,6 +69,20 @@ public class StatsStore {
             case Protocol.OUTCOME_LOSS -> LOSS;
             default -> DRAW;
         };
+    }
+    private static String pairKey(String a, String b) {
+        return a.compareTo(b) < 0 ? a + "\u001F" + b : b + "\u001F" + a;
+    }
+
+    /** VERSUS_STATS 응답 메시지 생성: 나와 상대가 서로 한 1:1 게임의 승/패/무 */
+    public synchronized Message versusMessage(String me, String opponent) {
+        Map<String, int[]> pair = pairStats.getOrDefault(pairKey(me, opponent), Map.of());
+        List<String[]> rows = new ArrayList<>();
+        for (String nick : new String[]{me, opponent}) {
+            int[] r = pair.getOrDefault(nick, new int[3]);
+            rows.add(new String[]{nick, String.valueOf(r[WIN]), String.valueOf(r[LOSS]), String.valueOf(r[DRAW])});
+        }
+        return Message.of(MessageType.VERSUS_STATS).put("opponent", opponent).putTable("users", rows);
     }
 
     /** ROOM_STATS 응답 메시지 생성: 그 채팅방에서 한 게임의 사용자별 승/패/무 */
@@ -125,6 +147,8 @@ public class StatsStore {
     public synchronized void removeUser(String nickname) {
         if (stats.remove(nickname) != null) save();
         for (Map<String, int[]> room : roomStats.values()) room.remove(nickname);
+        pairStats.keySet().removeIf(k -> k.equals(nickname) || k.startsWith(nickname + "\u001F")
+                || k.endsWith("\u001F" + nickname));
     }
 
     private void save() {

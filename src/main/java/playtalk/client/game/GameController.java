@@ -1,7 +1,6 @@
 package playtalk.client.game;
 
 import playtalk.client.net.ServerConnection;
-import playtalk.client.ui.ChatPanel;
 import playtalk.common.GameType;
 import playtalk.common.Message;
 import playtalk.common.MessageType;
@@ -27,11 +26,14 @@ public class GameController {
     private final JFrame frame;
     private final ServerConnection connection;
     private final String me;
-    private final ChatPanel chat;
     private final Map<String, GameWindow> windows = new HashMap<>();
     /** 게임이 끝났지만 아직 화면에 열려 있는 창들 (재대결 시작 때 닫기 위해 보관) */
     private final List<GameWindow> endedWindows = new ArrayList<>();
     private IntConsumer statsOpener;
+    /** 지금 화면에 보이는 채팅방 (홈이면 -1). 다른 방의 대기실 창이 갑자기 뜨지 않게 거른다 */
+    private int viewedRoomId = -1;
+    private Consumer<String> versusOpener;
+
     /** 초대 결과 등 안내 문구를 보여줄 곳 (기본: 채팅창 시스템 메시지) */
     private Consumer<String> notifier;
     private final Map<String, InviteDialog> invites = new HashMap<>();
@@ -40,12 +42,11 @@ public class GameController {
     /** 지금 내 방에 열려 있는 대기실 id (없으면 null) */
     private String currentLobbyId;
 
-    public GameController(JFrame frame, ServerConnection connection, String me, ChatPanel chat) {
+    public GameController(JFrame frame, ServerConnection connection, String me) {
         this.frame = frame;
         this.connection = connection;
         this.me = me;
-        this.chat = chat;
-        this.notifier = chat::appendSystem;
+        this.notifier = text -> { };
         this.lobbyDialog = new LobbyDialog(frame, connection, me);
 
         connection.on(MessageType.GAME_INVITE, this::onInvite);
@@ -68,7 +69,7 @@ public class GameController {
     }
 
     /** 다인용 게임: 대기실이 있으면 보여주고, 없으면 새로 연다 */
-    public void openMultiGame() {
+    public void openMultiGame(int roomId) {
         if (currentLobbyId != null) {
             lobbyDialog.setVisible(true);
             return;
@@ -76,11 +77,12 @@ public class GameController {
         GameType[] options = Arrays.stream(GameType.values()).filter(t -> !t.isOneOnOne()).toArray(GameType[]::new);
         GameType type = GameChoiceDialog.choose(frame, "다인용 게임", "방 사람들과 함께할 게임을 고르세요.", options);
         if (type == null) return;
-        connection.send(Message.of(MessageType.LOBBY_OPEN).put("game", type.name()));
+        connection.send(Message.of(MessageType.LOBBY_OPEN).put("game", type.name()).put("roomId", roomId));
     }
 
-    /** 방을 옮기면 이전 방의 대기실 정보는 버린다 */
-    public void onRoomChanged() {
+    /** 보고 있는 방이 바뀌면(방 전환, 홈으로 이동) 이전 방의 대기실 창은 닫는다 */
+    public void onRoomChanged(int viewedRoomId) {
+        this.viewedRoomId = viewedRoomId;
         currentLobbyId = null;
         lobbyDialog.setVisible(false);
     }
@@ -92,6 +94,10 @@ public class GameController {
 
     public void setStatsOpener(IntConsumer statsOpener) {
         this.statsOpener = statsOpener;
+    }
+
+    public void setVersusOpener(Consumer<String> versusOpener) {
+        this.versusOpener = versusOpener;
     }
 
     /** ERROR를 게임 창에서 보여줬으면 true */
@@ -153,6 +159,7 @@ public class GameController {
 
     private void onLobbyState(Message msg) {
         boolean firstTime = !msg.get("lobbyId").equals(currentLobbyId);
+        if (firstTime && msg.getInt("roomId", -1) != viewedRoomId) return; // 다른 방의 대기실은 그 방을 열었을 때 안내(채팅)만 보인다
         currentLobbyId = msg.get("lobbyId");
         lobbyDialog.update(msg);
         boolean joined = msg.getList("players").contains(me);
@@ -174,12 +181,24 @@ public class GameController {
     private void onGameStart(Message msg) {
         GameType type = GameType.parse(msg.get("game"));
         if (type == null) return;
-        GameSessionInfo info = new GameSessionInfo(msg.get("sessionId"), type, me, msg.getList("players"), connection);
+        int roomId = msg.getInt("roomId", -1);
+        GameSessionInfo info = new GameSessionInfo(msg.get("sessionId"), type, me, msg.getList("players"), connection, roomId);
         closeEndedWindows(info);
         GameWindow window = GameWindowRegistry.create(frame, info);
-        int roomId = msg.getInt("roomId", -1);
+        // 1:1 게임이면 그 상대와 한 전적, 다인용이면 그 채팅방의 전적
+        String opponent = null;
+        if (type.isOneOnOne()) {
+            for (String p : info.players()) {
+                if (!p.equals(me)) opponent = p;
+            }
+        }
+        final String opp = opponent;
         window.setOnShowStats(() -> {
-            if (statsOpener != null) statsOpener.accept(roomId);
+            if (opp != null) {
+                if (versusOpener != null) versusOpener.accept(opp);
+            } else if (statsOpener != null) {
+                statsOpener.accept(roomId);
+            }
         });
         windows.put(info.sessionId(), window);
         window.setVisible(true);

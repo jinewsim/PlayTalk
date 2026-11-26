@@ -127,9 +127,22 @@ public class GameManager implements GameContext {
         startSession(inv.type(), List.of(inv.from(), inv.to()), room);
     }
 
-    /** 두 사람이 같은 채팅방에 있으면 그 방, 아니면 null */
+    /** 두 사람이 함께 참여 중인 채팅방(여러 개면 먼저 입장한 방), 없으면 null */
     private static ChatRoom sharedRoom(ClientHandler a, ClientHandler b) {
-        return a.getRoom() != null && a.getRoom() == b.getRoom() ? a.getRoom() : null;
+        for (ChatRoom r : a.getRooms()) {
+            if (b.isIn(r)) return r;
+        }
+        return null;
+    }
+
+    /** 메시지의 roomId에 해당하는 내가 참여 중인 방. roomId가 없고 참여 중인 방이 하나뿐이면 그 방. */
+    private static ChatRoom roomFor(ClientHandler user, Message msg) {
+        List<ChatRoom> mine = user.getRooms();
+        int id = msg.getInt("roomId", -1);
+        for (ChatRoom r : mine) {
+            if (r.getId() == id) return r;
+        }
+        return id < 0 && mine.size() == 1 ? mine.get(0) : null;
     }
 
     private boolean areFriends(ClientHandler a, ClientHandler b) {
@@ -175,7 +188,7 @@ public class GameManager implements GameContext {
 
     private synchronized void openLobby(ClientHandler user, Message msg) {
         GameType type = GameType.parse(msg.get("game"));
-        ChatRoom room = user.getRoom();
+        ChatRoom room = roomFor(user, msg);
         if (!registry.supports(type) || type.isOneOnOne()) {
             user.sendError("다인용 게임이 아닙니다.");
             return;
@@ -203,14 +216,14 @@ public class GameManager implements GameContext {
         Lobby lobby = new Lobby(nextId("L"), type, room, user);
         lobbies.put(room.getId(), lobby);
         lobby.expiry = schedule(() -> closeLobby(lobby, "시간이 지나 대기실이 닫혔습니다.", null), LOBBY_EXPIRE_MS);
-        room.broadcast(Message.of(MessageType.SYSTEM)
+        room.broadcast(Message.of(MessageType.SYSTEM).put("roomId", room.getId())
                 .put("text", user.nickname() + " 님이 [" + type.displayName() + "] 대기실을 열었습니다. 참가하세요!"));
         room.broadcast(lobby.stateMessage());
     }
 
     private synchronized void joinLobby(ClientHandler user, Message msg) {
         Lobby lobby = findLobby(msg.get("lobbyId"));
-        if (lobby == null || user.getRoom() != lobby.room) {
+        if (lobby == null || !user.isIn(lobby.room)) {
             user.sendError("참가할 수 없는 대기실입니다.");
             return;
         }
@@ -249,7 +262,7 @@ public class GameManager implements GameContext {
         }
         List<Participant> players = new ArrayList<>();
         for (ClientHandler p : lobby.players) {
-            if (p.getRoom() == lobby.room && !p.isInGame()) players.add(p);
+            if (p.isIn(lobby.room) && !p.isInGame()) players.add(p);
         }
         if (players.size() < lobby.type.minPlayers()) {
             user.sendError("최소 " + lobby.type.minPlayers() + "명이 모여야 시작할 수 있습니다.");
@@ -314,7 +327,7 @@ public class GameManager implements GameContext {
 
         Log.info("게임 시작 %s %s %s", id, type, names);
         if (room != null) {
-            room.broadcast(Message.of(MessageType.SYSTEM)
+            room.broadcast(Message.of(MessageType.SYSTEM).put("roomId", room.getId())
                     .put("text", "[" + type.displayName() + "] " + String.join(" vs ", names) + " 게임이 시작되었습니다!"));
         }
         refreshMembers(list);
@@ -366,7 +379,7 @@ public class GameManager implements GameContext {
 
         Log.info("게임 종료 %s: %s", session.getId(), result.summary());
         if (room != null) {
-            room.broadcast(Message.of(MessageType.SYSTEM)
+            room.broadcast(Message.of(MessageType.SYSTEM).put("roomId", room.getId())
                     .put("text", "[결과] [" + session.getType().displayName() + "] " + result.summary()));
         }
         refreshMembers(session.getPlayers());
@@ -423,7 +436,7 @@ public class GameManager implements GameContext {
     private void refreshMembers(List<? extends Participant> players) {
         Set<ChatRoom> rooms = new LinkedHashSet<>();
         for (Participant p : players) {
-            if (p instanceof ClientHandler c && c.getRoom() != null) rooms.add(c.getRoom());
+            if (p instanceof ClientHandler c) rooms.addAll(c.getRooms());
         }
         for (ChatRoom r : rooms) server.rooms().broadcastMembers(r);
     }
